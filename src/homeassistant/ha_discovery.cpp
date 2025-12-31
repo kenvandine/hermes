@@ -25,6 +25,8 @@ bool HomeAssistantDiscovery::publishAll(PubSubClient* mqtt) {
     success &= publishWifiRssiSensor(mqtt);
     success &= publishUptimeSensor(mqtt);
     success &= publishHangupButton(mqtt);
+    success &= publishAIQuerySensor(mqtt);
+    success &= publishAIResponseSensor(mqtt);
 
     if (success) {
         Serial.println("[HA Discovery] All discovery messages published successfully!");
@@ -50,6 +52,8 @@ bool HomeAssistantDiscovery::unpublishAll(PubSubClient* mqtt) {
     publishDiscovery(mqtt, MqttTopics::buildHADiscoveryTopic("sensor", deviceId + "_rssi"), "");
     publishDiscovery(mqtt, MqttTopics::buildHADiscoveryTopic("sensor", deviceId + "_uptime"), "");
     publishDiscovery(mqtt, MqttTopics::buildHADiscoveryTopic("button", deviceId + "_hangup"), "");
+    publishDiscovery(mqtt, MqttTopics::buildHADiscoveryTopic("sensor", deviceId + "_ai_query"), "");
+    publishDiscovery(mqtt, MqttTopics::buildHADiscoveryTopic("sensor", deviceId + "_ai_response"), "");
 
     return true;
 }
@@ -177,6 +181,51 @@ bool HomeAssistantDiscovery::publishHangupButton(PubSubClient* mqtt) {
     serializeJson(doc, payload);
 
     String topic = MqttTopics::buildHADiscoveryTopic("button", deviceId + "_hangup");
+    return publishDiscovery(mqtt, topic, payload);
+}
+
+bool HomeAssistantDiscovery::publishAIQuerySensor(PubSubClient* mqtt) {
+    String deviceId = deviceManager->getDeviceId();
+    String roomName = deviceManager->getRoomName();
+
+    DynamicJsonDocument doc(1024);
+
+    doc["name"] = roomName + " AI Query";
+    doc["unique_id"] = deviceId + "_ai_query";
+    doc["state_topic"] = MqttTopics::buildAITopic(deviceId, "query");
+    doc["value_template"] = "{{ value_json.query | default('None') }}";
+    doc["icon"] = "mdi:message-question";
+
+    JsonObject device = doc.createNestedObject("device");
+    buildDeviceInfo(device);
+
+    String payload;
+    serializeJson(doc, payload);
+
+    String topic = MqttTopics::buildHADiscoveryTopic("sensor", deviceId + "_ai_query");
+    return publishDiscovery(mqtt, topic, payload);
+}
+
+bool HomeAssistantDiscovery::publishAIResponseSensor(PubSubClient* mqtt) {
+    String deviceId = deviceManager->getDeviceId();
+    String roomName = deviceManager->getRoomName();
+
+    DynamicJsonDocument doc(2048);  // Larger buffer for AI response
+
+    doc["name"] = roomName + " AI Response";
+    doc["unique_id"] = deviceId + "_ai_response";
+    doc["state_topic"] = MqttTopics::buildAITopic(deviceId, "response");
+    doc["value_template"] = "{{ value_json.response[:255] | default('None') }}";  // Truncate to 255 chars for state
+    doc["json_attributes_topic"] = MqttTopics::buildAITopic(deviceId, "response");
+    doc["icon"] = "mdi:robot";
+
+    JsonObject device = doc.createNestedObject("device");
+    buildDeviceInfo(device);
+
+    String payload;
+    serializeJson(doc, payload);
+
+    String topic = MqttTopics::buildHADiscoveryTopic("sensor", deviceId + "_ai_response");
     return publishDiscovery(mqtt, topic, payload);
 }
 

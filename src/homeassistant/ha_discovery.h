@@ -15,7 +15,7 @@ class PubSubClient;
  * Publishes discovery messages for:
  * - Device registration
  * - Binary sensors (call active)
- * - Sensors (caller info, wifi RSSI, uptime)
+ * - Sensors (caller info, wifi RSSI, uptime, AI query, AI response)
  * - Buttons (hangup)
  *
  * See: https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery
@@ -50,6 +50,8 @@ private:
     bool publishWifiRssiSensor(PubSubClient* mqtt);
     bool publishUptimeSensor(PubSubClient* mqtt);
     bool publishHangupButton(PubSubClient* mqtt);
+    bool publishAIQuerySensor(PubSubClient* mqtt);
+    bool publishAIResponseSensor(PubSubClient* mqtt);
 
     // Helper to publish discovery message
     bool publishDiscovery(PubSubClient* mqtt, const String& topic, const String& payload);
