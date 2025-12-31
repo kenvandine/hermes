@@ -41,6 +41,11 @@
 #include <Wire.h>
 #include "ui/ui_manager.h"
 
+// Phase 8 Components
+#include "ai/ollama_client.h"
+#include "ai/tts_engine.h"
+#include "ai/ai_manager.h"
+
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
@@ -61,6 +66,11 @@ Arduino_DataBus* displayBus = nullptr;
 Arduino_GFX* gfx = nullptr;
 UIManager* uiManager = nullptr;
 
+// Phase 8: AI Assistant
+OllamaClient* ollamaClient = nullptr;
+TTSEngine* ttsEngine = nullptr;
+AIManager* aiManager = nullptr;
+
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
 TaskHandle_t audioTaskHandle = NULL;
@@ -78,6 +88,7 @@ void setupAudio();
 void setupMQTT();
 void setupCallManager();
 void setupVoiceCommands();
+void setupAI();
 void printSystemInfo();
 
 // FreeRTOS Tasks
@@ -145,6 +156,10 @@ void setup() {
     Serial.println("[SETUP] Setting up voice commands...");
     setupVoiceCommands();
 
+    // Initialize AI assistant system (Phase 8)
+    Serial.println("[SETUP] Setting up AI assistant...");
+    setupAI();
+
     Serial.println("\n[SETUP] ========================================");
     Serial.println("[SETUP] All subsystems initialized!");
     Serial.println("[SETUP] ========================================\n");
@@ -168,6 +183,11 @@ void loop() {
     // Process call manager (check timeouts, state transitions)
     if (callManager) {
         callManager->process();
+    }
+
+    // Process AI manager (async operations)
+    if (aiManager) {
+        aiManager->update();
     }
 
     // Check device registry for timeouts
@@ -497,6 +517,13 @@ void setupVoiceCommands() {
                         }
                         break;
 
+                    case VoiceCommand::ASK_AI:
+                        // Process AI query
+                        if (aiManager && !result.aiQuery.isEmpty()) {
+                            aiManager->processQuery(result.aiQuery);
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -507,6 +534,59 @@ void setupVoiceCommands() {
     }
 
     Serial.println("[VoiceCommands] ✓ Voice command system initialized");
+}
+
+void setupAI() {
+    Serial.println("[AI] Initializing AI assistant system...");
+
+    // Check WiFi connectivity (required for Ollama server)
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[AI] ✗ WiFi not connected - AI assistant disabled");
+        return;
+    }
+
+    // Create Ollama client
+    ollamaClient = new OllamaClient();
+    if (!ollamaClient->begin(OLLAMA_SERVER_URL, OLLAMA_SERVER_PORT)) {
+        Serial.println("[AI] ✗ Failed to initialize Ollama client");
+        delete ollamaClient;
+        ollamaClient = nullptr;
+        return;
+    }
+    ollamaClient->setModel(OLLAMA_MODEL_NAME);
+    Serial.printf("[AI] ✓ Ollama client connected to %s:%d\n", OLLAMA_SERVER_URL, OLLAMA_SERVER_PORT);
+    Serial.printf("[AI]   Model: %s\n", OLLAMA_MODEL_NAME);
+
+    // Create TTS engine
+    ttsEngine = new TTSEngine();
+    if (!ttsEngine->begin(TTS_ENGINE, audioPipeline)) {
+        Serial.println("[AI] ✗ Failed to initialize TTS engine");
+        delete ttsEngine;
+        ttsEngine = nullptr;
+        return;
+    }
+    ttsEngine->setSpeed(TTS_SPEED);
+    Serial.println("[AI] ✓ TTS engine initialized");
+
+    // Create AI manager
+    if (!ollamaClient || !ttsEngine || !uiManager || !mqttClient || !stateMachine) {
+        Serial.println("[AI] ✗ Missing dependencies for AI manager");
+        return;
+    }
+
+    aiManager = new AIManager(ollamaClient, ttsEngine, uiManager, mqttClient, stateMachine);
+    if (!aiManager->begin()) {
+        Serial.println("[AI] ✗ Failed to initialize AI manager");
+        delete aiManager;
+        aiManager = nullptr;
+        return;
+    }
+
+    // Set response mode (TTS + Display + MQTT)
+    aiManager->setResponseMode(AI_RESPONSE_MODE_DEFAULT);
+    Serial.println("[AI] ✓ AI manager initialized");
+
+    Serial.println("[AI] ✓ AI assistant system ready");
 }
 
 void printSystemInfo() {
@@ -584,8 +664,18 @@ void audioTask(void* parameter) {
 
             // Check for command timeout
             if (commandProcessor && commandProcessor->hasTimedOut()) {
-                Serial.println("[AUDIO_TASK] Command timeout - returning to IDLE");
-                stateMachine->setState(AppState::IDLE);
+                // On timeout, check if we have a partial AI query
+                CommandResult partial = commandProcessor->getPartialCommand();
+                if (partial.command == VoiceCommand::ASK_AI && !partial.aiQuery.isEmpty()) {
+                    Serial.printf("[AUDIO_TASK] Command timeout - processing partial AI query: '%s'\n",
+                                  partial.aiQuery.c_str());
+                    if (aiManager) {
+                        aiManager->processQuery(partial.aiQuery);
+                    }
+                } else {
+                    Serial.println("[AUDIO_TASK] Command timeout - returning to IDLE");
+                    stateMachine->setState(AppState::IDLE);
+                }
             }
         }
 
