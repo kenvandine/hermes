@@ -242,6 +242,39 @@
 #define LOG_LEVEL                   4
 
 // ============================================================================
+// OLLAMA AI ASSISTANT CONFIGURATION
+// ============================================================================
+
+// Ollama server settings
+#define OLLAMA_SERVER_URL       "http://192.168.1.50"  // Ollama LXD container IP
+#define OLLAMA_SERVER_PORT      11434                  // Default Ollama port
+#define OLLAMA_MODEL_NAME       "llama3.2:3b"          // Model (fast, 2GB)
+#define OLLAMA_TIMEOUT_MS       10000                  // 10 second timeout
+#define OLLAMA_MAX_TOKENS       200                    // Concise responses
+#define OLLAMA_TEMPERATURE      0.7                    // Creativity (0.0-2.0)
+
+// Piper TTS server settings
+#define PIPER_SERVER_URL        "http://192.168.1.51"  // Piper LXD container IP
+#define PIPER_SERVER_PORT       10200                  // Piper Wyoming protocol port
+#define PIPER_VOICE             "en_US-lessac-medium"  // Voice model name
+
+// Whisper speech recognition server (optional)
+#define WHISPER_SERVER_URL      "http://192.168.1.52"  // Whisper LXD container IP
+#define WHISPER_SERVER_PORT     9000                   // Whisper API port
+#define WHISPER_ENABLED         false                  // Enable server-side STT
+
+// AI system prompt (concise responses for voice)
+#define AI_SYSTEM_PROMPT        "You are a helpful home assistant. Keep responses under 50 words."
+
+// TTS engine selection
+#define TTS_ENGINE              TTSEngine::PIPER       // PIPER, ESPEAK, or CLOUD_FALLBACK
+#define TTS_SPEED               1.0                    // Speech rate (0.5-2.0)
+
+// AI response delivery mode (bitfield)
+// AIManager::TTS_ONLY | AIManager::DISPLAY_ONLY | AIManager::MQTT_ONLY
+#define AI_RESPONSE_MODE_DEFAULT  7                    // All three (0x01 | 0x02 | 0x04)
+
+// ============================================================================
 // FEATURE FLAGS
 // ============================================================================
 
@@ -250,6 +283,7 @@
 #define FEATURE_WEB_CONFIG          false  // Web-based configuration (future)
 #define FEATURE_BLUETOOTH           false  // Bluetooth support (future)
 #define FEATURE_RECORDING           false  // Call recording (future)
+#define FEATURE_AI_ASSISTANT        true   // Ollama AI assistant integration
 
 // ============================================================================
 // VERSION INFORMATION

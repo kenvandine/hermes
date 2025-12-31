@@ -16,6 +16,8 @@ enum class AppState {
     RINGING,       // Incoming call, waiting for user to accept/reject
     ACTIVE_CALL,   // Call in progress
     HANGING_UP,    // Call ending, cleanup in progress
+    AI_QUERY,      // Processing AI query (waiting for Ollama response)
+    AI_RESPONSE,   // Delivering AI response (TTS, display, MQTT)
     ERROR          // Error state
 };
 

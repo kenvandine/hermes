@@ -24,9 +24,13 @@
  * │   │   ├── accept                  # Accept call
  * │   │   ├── reject                  # Reject call
  * │   │   └── hangup                  # Hang up call
- * │   └── sensors/
- * │       ├── wifi_rssi               # WiFi signal strength
- * │       └── uptime                  # Device uptime
+ * │   ├── sensors/
+ * │   │   ├── wifi_rssi               # WiFi signal strength
+ * │   │   └── uptime                  # Device uptime
+ * │   └── ai/
+ * │       ├── query                   # AI query sent
+ * │       ├── response                # AI response received
+ * │       └── status                  # AI processing status
  * │
  * └── homeassistant/                   # HA MQTT Discovery
  *     ├── device/{device_id}/config
@@ -67,6 +71,14 @@ inline String buildCallTopic(const String& deviceId, const char* action) {
  */
 inline String buildSensorTopic(const String& deviceId, const char* sensor) {
     return String(BASE) + "/devices/" + deviceId + "/sensors/" + sensor;
+}
+
+/**
+ * Build AI topic
+ * Example: buildAITopic("esp32_ABC123", "query") -> "intercom/devices/esp32_ABC123/ai/query"
+ */
+inline String buildAITopic(const String& deviceId, const char* action) {
+    return String(BASE) + "/devices/" + deviceId + "/ai/" + action;
 }
 
 /**

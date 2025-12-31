@@ -256,6 +256,36 @@ void MqttClient::publishUptime(unsigned long seconds) {
     mqtt->publish(topic.c_str(), String(seconds).c_str());
 }
 
+void MqttClient::publishAIQuery(const String& query) {
+    String deviceId = deviceManager->getDeviceId();
+    String topic = MqttTopics::buildAITopic(deviceId, "query");
+
+    DynamicJsonDocument doc(512);
+    doc["query"] = query;
+    doc["timestamp"] = millis();
+
+    String payload;
+    serializeJson(doc, payload);
+
+    mqtt->publish(topic.c_str(), payload.c_str());
+}
+
+void MqttClient::publishAIResponse(const String& query, const String& response, uint32_t responseTime) {
+    String deviceId = deviceManager->getDeviceId();
+    String topic = MqttTopics::buildAITopic(deviceId, "response");
+
+    DynamicJsonDocument doc(1024);
+    doc["query"] = query;
+    doc["response"] = response.substring(0, 500);  // Limit response size
+    doc["duration_ms"] = responseTime;
+    doc["timestamp"] = millis();
+
+    String payload;
+    serializeJson(doc, payload);
+
+    mqtt->publish(topic.c_str(), payload.c_str());
+}
+
 void MqttClient::sendCallRequest(const String& targetDeviceId, const String& sessionId) {
     String topic = MqttTopics::buildCallTopic(targetDeviceId, "request");
 

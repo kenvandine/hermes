@@ -81,6 +81,8 @@ String StateMachine::stateToString(AppState state) {
         case AppState::RINGING:     return "RINGING";
         case AppState::ACTIVE_CALL: return "ACTIVE_CALL";
         case AppState::HANGING_UP:  return "HANGING_UP";
+        case AppState::AI_QUERY:    return "AI_QUERY";
+        case AppState::AI_RESPONSE: return "AI_RESPONSE";
         case AppState::ERROR:       return "ERROR";
         default:                    return "UNKNOWN";
     }
@@ -94,11 +96,13 @@ bool StateMachine::isValidTransition(AppState from, AppState to) const {
             return (to == AppState::LISTENING ||
                     to == AppState::CALLING ||
                     to == AppState::RINGING ||
+                    to == AppState::AI_QUERY ||
                     to == AppState::ERROR);
 
         case AppState::LISTENING:
             return (to == AppState::IDLE ||
                     to == AppState::CALLING ||
+                    to == AppState::AI_QUERY ||
                     to == AppState::ERROR);
 
         case AppState::CALLING:
@@ -116,6 +120,15 @@ bool StateMachine::isValidTransition(AppState from, AppState to) const {
                     to == AppState::ERROR);
 
         case AppState::HANGING_UP:
+            return (to == AppState::IDLE ||
+                    to == AppState::ERROR);
+
+        case AppState::AI_QUERY:
+            return (to == AppState::AI_RESPONSE ||
+                    to == AppState::IDLE ||
+                    to == AppState::ERROR);
+
+        case AppState::AI_RESPONSE:
             return (to == AppState::IDLE ||
                     to == AppState::ERROR);
 

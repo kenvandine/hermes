@@ -87,6 +87,12 @@ public:
     void publishUptime(unsigned long seconds);
 
     /**
+     * AI Assistant publishing
+     */
+    void publishAIQuery(const String& query);
+    void publishAIResponse(const String& query, const String& response, uint32_t responseTime);
+
+    /**
      * Call signaling methods
      */
     void sendCallRequest(const String& targetDeviceId, const String& sessionId);
