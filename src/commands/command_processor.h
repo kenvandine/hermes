@@ -13,6 +13,7 @@ enum class VoiceCommand {
     CALL,           // "Call [ROOM]"
     HANG_UP,        // "Hang up"
     CANCEL,         // "Cancel"
+    ASK_AI,         // "Ask [QUERY]" - AI assistant query
     UNKNOWN         // Command detected but not understood
 };
 
@@ -24,12 +25,14 @@ enum class VoiceCommand {
 struct CommandResult {
     VoiceCommand command;
     String targetRoom;      // For DROP_IN/CALL commands
+    String aiQuery;         // For ASK_AI command
     float confidence;       // 0.0-1.0
     String rawText;         // Raw recognized text (if available)
 
     CommandResult()
         : command(VoiceCommand::NONE),
           targetRoom(""),
+          aiQuery(""),
           confidence(0.0f),
           rawText("") {}
 
@@ -47,6 +50,8 @@ struct CommandResult {
                 return "HANG_UP";
             case VoiceCommand::CANCEL:
                 return "CANCEL";
+            case VoiceCommand::ASK_AI:
+                return "ASK_AI: " + aiQuery;
             case VoiceCommand::UNKNOWN:
                 return "UNKNOWN";
             default:
@@ -151,6 +156,7 @@ private:
     // Command building state
     VoiceCommand currentCommand;
     String targetRoom;
+    String currentAIQuery;  // Accumulates AI query text
     float commandConfidence;
     float roomConfidence;
 

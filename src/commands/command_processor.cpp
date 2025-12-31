@@ -90,7 +90,13 @@ CommandResult CommandProcessor::processKeyword(const String& keyword, float conf
             return result;
         }
 
-        // Otherwise, wait for room name
+        // For ASK_AI, keep listening to accumulate query text
+        if (cmd == VoiceCommand::ASK_AI) {
+            Serial.println("[CommandProcessor] AI query started, listening for question...");
+            return CommandResult();
+        }
+
+        // Otherwise, wait for room name (for CALL/DROP_IN)
         return CommandResult();
     }
 
@@ -130,15 +136,81 @@ CommandResult CommandProcessor::processKeyword(const String& keyword, float conf
         return result;
     }
 
+    // If we're in AI query mode, accumulate keywords as query text
+    if (currentCommand == VoiceCommand::ASK_AI) {
+        if (!currentAIQuery.isEmpty()) {
+            currentAIQuery += " ";
+        }
+        currentAIQuery += keyword;
+        Serial.printf("[CommandProcessor] AI query building: '%s'\n", currentAIQuery.c_str());
+
+        // Update confidence (use highest confidence seen)
+        if (confidence > roomConfidence) {
+            roomConfidence = confidence;
+        }
+
+        return CommandResult();  // Keep listening
+    }
+
     // Unknown keyword
     Serial.printf("[CommandProcessor] Unknown keyword: '%s'\n", keyword.c_str());
     return CommandResult();
 }
 
 CommandResult CommandProcessor::processText(const String& text) {
-    // TODO: Implement text-based command parsing
-    // For future enhancement with full speech-to-text
-    Serial.printf("[CommandProcessor] Text processing not yet implemented: '%s'\n", text.c_str());
+    if (!listening) {
+        Serial.println("[CommandProcessor] WARNING: Not listening, ignoring text");
+        return CommandResult();
+    }
+
+    Serial.printf("[CommandProcessor] Processing text: '%s'\n", text.c_str());
+
+    // Check if text starts with "ask" for AI query
+    String textLower = text;
+    textLower.toLowerCase();
+    textLower.trim();
+
+    if (textLower.startsWith("ask ")) {
+        // Extract query (everything after "ask ")
+        String query = text.substring(4);
+        query.trim();
+
+        if (query.length() > 0) {
+            CommandResult result;
+            result.command = VoiceCommand::ASK_AI;
+            result.aiQuery = query;
+            result.confidence = 0.9f;  // High confidence for text-based input
+            result.rawText = text;
+
+            Serial.printf("[CommandProcessor] AI query from text: '%s'\n", query.c_str());
+            stopListening();
+            return result;
+        }
+    }
+
+    // For other text processing, try to parse as commands
+    // This is a simple implementation - could be enhanced with NLP
+    if (textLower.indexOf("hang up") >= 0 || textLower.indexOf("hangup") >= 0) {
+        CommandResult result;
+        result.command = VoiceCommand::HANG_UP;
+        result.confidence = 0.9f;
+        result.rawText = text;
+        stopListening();
+        return result;
+    }
+
+    if (textLower.indexOf("cancel") >= 0 || textLower.indexOf("never mind") >= 0) {
+        CommandResult result;
+        result.command = VoiceCommand::CANCEL;
+        result.confidence = 0.9f;
+        result.rawText = text;
+        stopListening();
+        return result;
+    }
+
+    // TODO: Add more text parsing for CALL/DROP_IN commands
+
+    Serial.printf("[CommandProcessor] Could not parse text: '%s'\n", text.c_str());
     return CommandResult();
 }
 
@@ -146,6 +218,7 @@ CommandResult CommandProcessor::getPartialCommand() const {
     CommandResult result;
     result.command = currentCommand;
     result.targetRoom = targetRoom;
+    result.aiQuery = currentAIQuery;
     result.confidence = calculateCombinedConfidence();
     return result;
 }
@@ -153,6 +226,7 @@ CommandResult CommandProcessor::getPartialCommand() const {
 void CommandProcessor::reset() {
     currentCommand = VoiceCommand::NONE;
     targetRoom = "";
+    currentAIQuery = "";
     commandConfidence = 0.0f;
     roomConfidence = 0.0f;
 }
@@ -229,6 +303,10 @@ VoiceCommand CommandProcessor::parseCommandKeyword(const String& keyword) {
 
     if (keywordLower == "cancel" || keywordLower == "stop" || keywordLower == "nevermind") {
         return VoiceCommand::CANCEL;
+    }
+
+    if (keywordLower == "ask" || keywordLower == "question") {
+        return VoiceCommand::ASK_AI;
     }
 
     return VoiceCommand::NONE;
