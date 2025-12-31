@@ -97,6 +97,7 @@ private:
     lv_obj_t* screenRinging;
     lv_obj_t* screenActiveCall;
     lv_obj_t* screenSettings;
+    lv_obj_t* screenAI;
     lv_obj_t* screenError;
 
     // Current active screen
@@ -115,6 +116,7 @@ private:
     void createRingingScreen();
     void createActiveCallScreen();
     void createSettingsScreen();
+    void createAIScreen();
     void createErrorScreen();
 
     // Screen loading functions

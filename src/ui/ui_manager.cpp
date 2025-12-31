@@ -6,6 +6,7 @@
 
 // Screen implementations
 #include "screens/screen_idle.h"
+#include "screens/screen_ai.h"
 
 // Forward declarations for other screens
 namespace ScreenListening { lv_obj_t* create(void* uiManager); }
@@ -39,6 +40,7 @@ UIManager::UIManager(StateMachine* sm, DeviceRegistry* dr, CallManager* cm, Audi
       screenRinging(nullptr),
       screenActiveCall(nullptr),
       screenSettings(nullptr),
+      screenAI(nullptr),
       screenError(nullptr),
       currentScreen(nullptr),
       touchBus(nullptr),
@@ -111,6 +113,7 @@ bool UIManager::begin(Arduino_GFX* display, TwoWire* touchI2C) {
     createRingingScreen();
     createActiveCallScreen();
     createSettingsScreen();
+    createAIScreen();
     createErrorScreen();
 
     // Load idle screen by default
@@ -161,6 +164,16 @@ void UIManager::onStateChanged(AppState oldState, AppState newState) {
         case AppState::HANGING_UP:
             // Brief message, then auto-return to idle
             showError("Ending call...");
+            break;
+
+        case AppState::AI_QUERY:
+            loadScreen(screenAI);
+            ScreenAI::showLoading(screenAI);
+            break;
+
+        case AppState::AI_RESPONSE:
+            // Screen should already be loaded, just update content
+            // Response will be updated via AIManager
             break;
 
         case AppState::ERROR:
@@ -286,6 +299,10 @@ void UIManager::createActiveCallScreen() {
 
 void UIManager::createSettingsScreen() {
     screenSettings = ScreenSettings::create(this);
+}
+
+void UIManager::createAIScreen() {
+    screenAI = ScreenAI::create(this);
 }
 
 void UIManager::createErrorScreen() {
