@@ -2,7 +2,7 @@
  * ESP32 Multi-Room Intercom System
  * Main Entry Point
  *
- * Phase 7: Touch Screen UI - COMPLETE INTERCOM WITH DISPLAY
+ * Phase 8: AI Assistant Integration - COMPLETE SMART INTERCOM
  *
  * This application orchestrates all subsystems:
  * - Device management and configuration
@@ -14,6 +14,7 @@
  * - Wake word detection (Edge Impulse)
  * - Voice command recognition (Edge Impulse keyword spotting)
  * - Touch screen UI (LVGL on 1.8" AMOLED)
+ * - AI Assistant (Ollama LLM with Piper TTS)
  */
 
 #include <Arduino.h>
@@ -120,9 +121,10 @@ void setup() {
     Serial.println("  ESP32 Multi-Room Intercom System");
     Serial.println("  Version: " FIRMWARE_VERSION);
     Serial.println("  Build: " BUILD_DATE " " BUILD_TIME);
-    Serial.println("  Phase: 7 - Touch Screen UI");
-    Serial.println("  Status: COMPLETE INTERCOM");
+    Serial.println("  Phase: 8 - AI Assistant");
+    Serial.println("  Status: SMART INTERCOM");
     Serial.println("  Display: 1.8\" AMOLED (368x448)");
+    Serial.println("  AI: Ollama + Piper TTS");
     Serial.println("========================================\n");
 
     // Print system information
