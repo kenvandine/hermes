@@ -12,7 +12,7 @@ This guide walks you through training a custom wake word model for the ESP32 int
 
 1. Go to https://studio.edgeimpulse.com
 2. Click "Create new project"
-3. Name it: `esp32-intercom-wake-word`
+3. Name it: `hermes-wake-word`
 4. Choose project type: "Audio"
 
 ## Step 2: Collect Training Data
@@ -185,15 +185,15 @@ You need to record samples of:
 
 2. Copy the library to your project:
    ```bash
-   cd esp32-intercom
-   unzip ~/Downloads/ei-esp32-intercom-wake-word-arduino-*.zip -d lib/
+   cd hermes
+   unzip ~/Downloads/ei-hermes-wake-word-arduino-*.zip -d lib/
    ```
 
 3. Update `src/audio/wake_word.cpp`:
 
    Uncomment and update the include:
    ```cpp
-   #include <ei-esp32-intercom-wake-word_inferencing.h>
+   #include <ei-hermes-wake-word_inferencing.h>
    ```
 
 4. Update `include/config.h`:

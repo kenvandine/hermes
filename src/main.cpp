@@ -1,8 +1,10 @@
 /*
- * ESP32 Multi-Room Intercom System
+ * HERMES - Home ESP Room Message Exchange System
  * Main Entry Point
  *
- * Phase 8: AI Assistant Integration - COMPLETE SMART INTERCOM
+ * "Swift communication, ancient wisdom"
+ *
+ * Phase 8: AI Assistant Integration - COMPLETE
  *
  * This application orchestrates all subsystems:
  * - Device management and configuration
@@ -118,13 +120,16 @@ void setup() {
 
     Serial.println("\n\n");
     Serial.println("========================================");
-    Serial.println("  ESP32 Multi-Room Intercom System");
+    Serial.println("       HERMES Intercom System");
+    Serial.println("  Home ESP Room Message Exchange");
+    Serial.println("========================================");
     Serial.println("  Version: " FIRMWARE_VERSION);
     Serial.println("  Build: " BUILD_DATE " " BUILD_TIME);
-    Serial.println("  Phase: 8 - AI Assistant");
-    Serial.println("  Status: SMART INTERCOM");
+    Serial.println("  Phase: 8 - AI Assistant (Complete)");
     Serial.println("  Display: 1.8\" AMOLED (368x448)");
     Serial.println("  AI: Ollama + Piper TTS");
+    Serial.println("========================================");
+    Serial.println("  \"Swift communication, ancient wisdom\"");
     Serial.println("========================================\n");
 
     // Print system information

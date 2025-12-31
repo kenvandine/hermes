@@ -56,7 +56,7 @@ Create one class per room in your home. Examples:
 
 1. Go to https://studio.edgeimpulse.com
 2. Click "Create new project"
-3. Name it: `esp32-intercom-commands`
+3. Name it: `hermes-commands`
 4. Choose project type: "Audio"
 
 ## Step 3: Collect Training Data
@@ -263,15 +263,15 @@ Critical step! Each sample must be labeled correctly:
 
 2. Copy the library to your project:
    ```bash
-   cd esp32-intercom
-   unzip ~/Downloads/ei-esp32-intercom-commands-arduino-*.zip -d lib/
+   cd hermes
+   unzip ~/Downloads/ei-hermes-commands-arduino-*.zip -d lib/
    ```
 
 3. Update `src/commands/speech_recognizer.cpp`:
 
    Uncomment and update the include:
    ```cpp
-   #include <ei-esp32-intercom-commands_inferencing.h>
+   #include <ei-hermes-commands_inferencing.h>
    ```
 
 4. Update `include/config.h`:

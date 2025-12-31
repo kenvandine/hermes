@@ -1,9 +1,13 @@
-# ESP32 Multi-Room Intercom System
+# HERMES
+**Home ESP Room Message Exchange System**
 
-A voice-activated, multi-room intercom system built on ESP32-S3 with full Home Assistant integration.
+A voice-activated, AI-enhanced multi-room intercom system built on ESP32-S3 with full Home Assistant integration.
+
+> *"Swift communication, ancient wisdom"* - The messenger of your smart home
 
 ## Features
 
+- **AI Assistant**: Ollama LLM integration with Piper TTS for natural language queries
 - **Voice Control**: Wake word detection ("Hey Intercom") with voice commands
 - **Multi-Room Communication**: Drop in on any room in your house
 - **Touch Screen UI**: 1.8" AMOLED display (368×448) with capacitive touch
@@ -33,14 +37,16 @@ A voice-activated, multi-room intercom system built on ESP32-S3 with full Home A
 - PlatformIO (VS Code extension or CLI)
 - Home Assistant with MQTT broker (Mosquitto addon)
 - Edge Impulse account (for wake word training)
+- Ollama server with llama3.2:3b model (for AI assistant)
+- Piper TTS server (for text-to-speech)
 
 ## Quick Start
 
 ### 1. Clone and Build
 
 ```bash
-git clone https://github.com/kenvandine/esp32-intercom.git
-cd esp32-intercom
+git clone https://github.com/kenvandine/hermes.git
+cd hermes
 pio run
 ```
 
@@ -55,12 +61,27 @@ Follow the comprehensive wiring guide in `docs/hardware_setup_waveshare_amoled.m
 ### 3. First Boot Setup
 
 1. Flash the firmware: `pio run -t upload`
-2. Device creates WiFi AP "Intercom-Setup"
+2. Device creates WiFi AP "HERMES-Setup"
 3. Connect and enter your WiFi credentials
 4. Enter room name on touch screen
 5. Device auto-discovers Home Assistant MQTT broker
 
-### 4. Train Wake Word (Optional - Phase 5)
+### 4. Setup AI Assistant (Optional)
+
+See the plan file for detailed Ollama and Piper TTS server setup instructions using LXD containers.
+
+Quick setup:
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2:3b
+
+# Configure in include/config.h
+#define OLLAMA_SERVER_URL "http://your-server:11434"
+#define PIPER_SERVER_URL "http://your-server:10200"
+```
+
+### 5. Train Wake Word (Optional)
 
 1. Create Edge Impulse project
 2. Record wake word samples ("Hey Intercom")
@@ -71,11 +92,18 @@ Follow the comprehensive wiring guide in `docs/hardware_setup_waveshare_amoled.m
 
 Devices automatically appear in Home Assistant via MQTT Discovery. No manual configuration needed!
 
+### Auto-Discovered Entities
+
+Each HERMES device creates:
+- **Binary Sensor**: Call active status
+- **Sensors**: Caller info, WiFi signal, uptime, AI query, AI response
+- **Button**: Hang up call
+
 ### Example Automation
 
 ```yaml
 automation:
-  - alias: "Doorbell to Kitchen Intercom"
+  - alias: "Doorbell to Kitchen HERMES"
     trigger:
       - platform: state
         entity_id: binary_sensor.front_door_doorbell
@@ -91,30 +119,55 @@ automation:
 
 ```yaml
 type: entities
-title: Intercom System
+title: HERMES Intercom System
 entities:
   - entity: binary_sensor.kitchen_intercom_call
+    name: Kitchen Call Active
   - entity: sensor.kitchen_intercom_caller
-  - entity: binary_sensor.living_room_intercom_call
+    name: Talking To
+  - entity: sensor.kitchen_intercom_ai_response
+    name: Last AI Response
 ```
 
 ## Architecture
 
 - **Signaling**: MQTT for device discovery and call setup
 - **Audio**: Opus codec over UDP for low-latency streaming
-- **UI**: LVGL graphics library on SPI display
+- **UI**: LVGL graphics library on QSPI AMOLED display
 - **Storage**: NVS for persistent configuration
+- **AI**: Ollama REST API with Piper TTS
 
 ## Development Phases
 
 - **Phase 1**: Foundation (WiFi, I2S, Touch Screen) ✅
-- **Phase 2**: MQTT & HA Discovery
-- **Phase 3**: Audio Streaming
-- **Phase 4**: Call Management
-- **Phase 5**: Wake Word Detection
-- **Phase 6**: Voice Commands
-- **Phase 7**: Polish & Stability
-- **Phase 8**: Future Enhancements (Ollama AI, etc.)
+- **Phase 2**: MQTT & HA Discovery ✅
+- **Phase 3**: Audio Streaming ✅
+- **Phase 4**: Call Management ✅
+- **Phase 5**: Wake Word Detection ✅
+- **Phase 6**: Voice Commands ✅
+- **Phase 7**: Touch Screen UI ✅
+- **Phase 8**: AI Assistant Integration ✅ **COMPLETE**
+
+## Voice Commands
+
+- **"Hey Intercom"** - Wake word to activate listening
+- **"Drop in on [Room Name]"** - Initiate call to room
+- **"Call [Room Name]"** - Initiate call to room
+- **"Hang up"** - End active call
+- **"Cancel"** - Cancel command listening
+- **"Ask [question]"** - Query the AI assistant
+
+## AI Assistant Examples
+
+After wake word detection:
+- "Ask what's the weather like?"
+- "Ask what time is it?"
+- "Ask tell me a joke"
+
+Responses are delivered via:
+- Text-to-speech (Piper TTS)
+- On-screen display
+- MQTT to Home Assistant
 
 ## Pin Configuration
 
@@ -122,21 +175,19 @@ Default pin configuration in `include/config.h`:
 
 | Function | GPIO |
 |----------|------|
-| I2S MIC SCK | 26 |
-| I2S MIC WS | 25 |
-| I2S MIC SD | 33 |
-| I2S SPK SCK | 14 |
-| I2S SPK WS | 12 |
-| I2S SPK SD | 13 |
-| Display SPI | See config.h |
-| Touch SPI | See config.h |
+| I2S MIC SCK | 1 |
+| I2S MIC WS | 2 |
+| I2S MIC SD | 42 |
+| I2S SPK SCK | 3 |
+| I2S SPK WS | 4 |
+| I2S SPK SD | 5 |
+| Display QSPI | See config.h |
+| Touch I2C | See config.h |
 
-## Voice Commands
+## Build Statistics
 
-- "Hey Intercom" - Wake word to activate listening
-- "Drop in on [Room Name]" - Initiate call to room
-- "Hang up" - End active call
-- "Cancel" - Cancel command listening
+- RAM Usage: 34.6% (113,452 / 327,680 bytes)
+- Flash Usage: 47.7% (1,593,613 / 3,342,336 bytes)
 
 ## Contributing
 
@@ -151,8 +202,14 @@ MIT License - See LICENSE file
 - [arduino-audio-tools](https://github.com/pschatzmann/arduino-audio-tools) by Phil Schatzmann
 - [LVGL](https://lvgl.io/) for graphics library
 - [Edge Impulse](https://edgeimpulse.com/) for wake word detection
+- [Ollama](https://ollama.com/) for local LLM inference
+- [Piper TTS](https://github.com/rhasspy/piper) for text-to-speech
 - Home Assistant community for MQTT Discovery protocol
 
 ## Support
 
 For issues, questions, or feature requests, please open a GitHub issue.
+
+---
+
+**HERMES** - *Swift communication, ancient wisdom* 🏛️

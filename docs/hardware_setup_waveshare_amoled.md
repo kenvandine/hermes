@@ -1,6 +1,6 @@
 # Hardware Setup Guide - Waveshare ESP32-S3 1.8" AMOLED
 
-This guide covers the hardware setup for the ESP32 Multi-Room Intercom using the **Waveshare ESP32-S3 1.8" AMOLED Touch Display** (368x448).
+This guide covers the hardware setup for **HERMES** (Home ESP Room Message Exchange System) using the **Waveshare ESP32-S3 1.8" AMOLED Touch Display** (368x448).
 
 ## Hardware Overview
 
