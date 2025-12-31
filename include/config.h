@@ -6,30 +6,37 @@
 // ============================================================================
 
 // I2S Microphone Pins (INMP441 or similar)
+// Using available GPIOs on Waveshare ESP32-S3 1.8" AMOLED
 #define I2S_MIC_NUM             I2S_NUM_0
-#define I2S_MIC_SCK_PIN         26    // Bit Clock (BCLK)
-#define I2S_MIC_WS_PIN          25    // Word Select (LRCLK)
-#define I2S_MIC_SD_PIN          33    // Serial Data (DOUT)
+#define I2S_MIC_SCK_PIN         2     // Bit Clock (BCLK) - Available GPIO
+#define I2S_MIC_WS_PIN          1     // Word Select (LRCLK) - Available GPIO
+#define I2S_MIC_SD_PIN          42    // Serial Data (DOUT) - Available GPIO
 
 // I2S Speaker/Amplifier Pins (MAX98357A or similar)
+// Using available GPIOs that don't conflict with display/touch (6-16)
 #define I2S_SPK_NUM             I2S_NUM_1
-#define I2S_SPK_SCK_PIN         14    // Bit Clock (BCLK)
-#define I2S_SPK_WS_PIN          12    // Word Select (LRCLK)
-#define I2S_SPK_SD_PIN          13    // Serial Data (DIN)
+#define I2S_SPK_SCK_PIN         4     // Bit Clock (BCLK) - Available GPIO
+#define I2S_SPK_WS_PIN          5     // Word Select (LRCLK) - Available GPIO
+#define I2S_SPK_SD_PIN          3     // Serial Data (DIN) - Available GPIO
 
-// SPI Display Pins (Waveshare 4.3" - adjust for your specific model)
-// Note: Configure TFT_eSPI User_Setup.h for your exact display model
-#define TFT_MISO                -1    // Not used for most displays
-#define TFT_MOSI                11
-#define TFT_SCLK                10
-#define TFT_CS                  9
-#define TFT_DC                  8
-#define TFT_RST                 7
-#define TFT_BL                  6     // Backlight control
+// Waveshare ESP32-S3 1.8" AMOLED Display Pins (RM67162 controller)
+// This is an integrated board - pins are fixed, not customizable
+// Display uses QSPI interface
+#define TFT_CS                  10    // Chip select
+#define TFT_DC                  11    // Data/Command
+#define TFT_RST                 13    // Reset
+#define TFT_SDA0                9     // QSPI Data 0
+#define TFT_SDA1                8     // QSPI Data 1
+#define TFT_SDA2                7     // QSPI Data 2
+#define TFT_SDA3                6     // QSPI Data 3
+#define TFT_SCL                 12    // QSPI Clock
+#define TFT_BL                  38    // Backlight control (PWM)
 
-// Touch Screen Pins (typically shared SPI bus with display)
-#define TOUCH_CS                5
-#define TOUCH_IRQ               4     // Touch interrupt (optional)
+// Touch Screen Pins (CST816S capacitive touch controller via I2C)
+#define TOUCH_SDA               15    // I2C Data
+#define TOUCH_SCL               16    // I2C Clock
+#define TOUCH_RST               21    // Touch reset
+#define TOUCH_IRQ               14    // Touch interrupt
 
 // Optional: Physical buttons (if not using touch screen exclusively)
 #define BUTTON_ACCEPT_PIN       -1    // -1 = not used
@@ -91,24 +98,51 @@
 #define UDP_BUFFER_SIZE         2048   // UDP receive buffer size
 
 // ============================================================================
-// UI CONFIGURATION
+// UI CONFIGURATION - Waveshare ESP32-S3 1.8" AMOLED
 // ============================================================================
 
-// Display resolution (adjust for your display)
-#define DISPLAY_WIDTH           480
-#define DISPLAY_HEIGHT          272
+// Display resolution (Waveshare ESP32-S3 1.8" AMOLED: 368x448 portrait)
+#define DISPLAY_WIDTH           368
+#define DISPLAY_HEIGHT          448
 
 // Display rotation (0, 1, 2, 3 = 0°, 90°, 180°, 270°)
-#define DISPLAY_ROTATION        1
+// 0 = Portrait (368x448), 1 = Landscape (448x368)
+// 2 = Portrait inverted, 3 = Landscape inverted
+#define DISPLAY_ROTATION        0     // Portrait orientation
 
-// Backlight brightness (0-255)
-#define BACKLIGHT_BRIGHTNESS    200
+// Backlight brightness (0-255) - AMOLED backlight control
+#define BACKLIGHT_BRIGHTNESS    180   // Lower for AMOLED to save power
 
 // UI update rate (Hz)
 #define UI_UPDATE_RATE_HZ       30
 
-// Touch calibration (adjust for your display)
-#define TOUCH_CALIBRATION_ENABLED  true
+// Touch configuration (CST816S capacitive touch)
+#define TOUCH_I2C_ADDRESS       0x15  // CST816S I2C address
+#define CST816_SLAVE_ADDRESS    0x15  // Same as TOUCH_I2C_ADDRESS
+#define TOUCH_CALIBRATION_ENABLED  false  // Capacitive touch doesn't need calibration
+
+// UI Layout Constants (optimized for 368x448 portrait display)
+#define UI_MARGIN               10    // Screen margin
+#define UI_BUTTON_HEIGHT        60    // Touch button height
+#define UI_BUTTON_SPACING       15    // Space between buttons
+#define UI_HEADER_HEIGHT        50    // Header bar height
+#define UI_FOOTER_HEIGHT        80    // Footer area height
+#define UI_ICON_SIZE            48    // Icon size for buttons
+#define UI_FONT_SIZE_HEADER     24    // Header text size
+#define UI_FONT_SIZE_NORMAL     18    // Normal text size
+#define UI_FONT_SIZE_SMALL      14    // Small text size
+
+// UI Colors (optimized for AMOLED - use true black to save power)
+#define UI_COLOR_BACKGROUND     0x0000  // True black for AMOLED
+#define UI_COLOR_PRIMARY        0x07E0  // Green
+#define UI_COLOR_SECONDARY      0x7BEF  // Light gray
+#define UI_COLOR_ACCENT         0xFD20  // Orange
+#define UI_COLOR_TEXT           0xFFFF  // White
+#define UI_COLOR_TEXT_DIM       0x8410  // Dim white
+#define UI_COLOR_CALLING        0x07FF  // Cyan
+#define UI_COLOR_RINGING        0xFFE0  // Yellow
+#define UI_COLOR_ACTIVE         0x07E0  // Green
+#define UI_COLOR_ERROR          0xF800  // Red
 
 // ============================================================================
 // WAKE WORD & VOICE COMMAND CONFIGURATION
@@ -119,6 +153,10 @@
 #define WAKE_WORD_THRESHOLD     0.8    // 0.0 - 1.0, higher = stricter
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
 
+// Voice command recognition
+#define VOICE_COMMANDS_ENABLED  false  // Set true when keyword spotting model ready
+#define COMMAND_THRESHOLD       0.8    // 0.0 - 1.0, higher = stricter
+
 // Command listening timeout
 #define COMMAND_TIMEOUT_MS      5000   // 5 seconds to speak command after wake
 
@@ -128,17 +166,6 @@
 // ============================================================================
 // CALL MANAGEMENT CONFIGURATION
 // ============================================================================
-
-// Call states
-enum class CallState {
-    IDLE,          // No active call
-    INITIATING,    // Outgoing call request sent
-    RINGING,       // Incoming call, awaiting user action
-    ACCEPTING,     // User accepted, establishing connection
-    ACTIVE,        // Call in progress
-    HANGING_UP,    // Terminating call
-    ERROR          // Error state
-};
 
 // Call timeouts
 #define CALL_RING_TIMEOUT_MS    30000  // 30 seconds for recipient to answer

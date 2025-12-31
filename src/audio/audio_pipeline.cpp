@@ -5,6 +5,7 @@ AudioPipeline::AudioPipeline()
     : i2s(nullptr),
       codec(nullptr),
       udp(nullptr),
+      wakeWord(nullptr),
       micBuffer(nullptr),
       speakerBuffer(nullptr),
       mode(AudioMode::IDLE),
@@ -15,7 +16,9 @@ AudioPipeline::AudioPipeline()
       micFrame(nullptr),
       speakerFrame(nullptr),
       opusPacket(nullptr),
-      initialized(false) {
+      initialized(false),
+      wakeWordEnabled(false),
+      wakeWordCallback(nullptr) {
 }
 
 AudioPipeline::~AudioPipeline() {
@@ -75,6 +78,16 @@ bool AudioPipeline::begin(uint32_t sampleRateHz) {
         return false;
     }
 
+    // Create and initialize wake word detector
+    wakeWord = new WakeWord();
+    if (wakeWord->begin(sampleRate, WAKE_WORD_THRESHOLD)) {
+        wakeWordEnabled = true;
+        Serial.println("[AudioPipeline] Wake word detector initialized");
+    } else {
+        Serial.println("[AudioPipeline] Wake word detector not available (disabled in config or missing model)");
+        wakeWordEnabled = false;
+    }
+
     initialized = true;
     Serial.println("[AudioPipeline] Initialized successfully");
 
@@ -100,6 +113,12 @@ void AudioPipeline::stop() {
         udp->stop();
         delete udp;
         udp = nullptr;
+    }
+
+    if (wakeWord) {
+        wakeWord->stop();
+        delete wakeWord;
+        wakeWord = nullptr;
     }
 
     if (micBuffer) {
@@ -128,6 +147,8 @@ void AudioPipeline::stop() {
     }
 
     initialized = false;
+    wakeWordEnabled = false;
+    wakeWordCallback = nullptr;
     mode = AudioMode::IDLE;
 }
 
@@ -273,8 +294,32 @@ void AudioPipeline::getStats(uint32_t& txPackets, uint32_t& rxPackets, uint32_t&
 // ============================================================================
 
 void AudioPipeline::processIdle() {
-    // In idle mode, do nothing
-    delay(10);
+    // In idle mode, run wake word detection if enabled
+    if (wakeWordEnabled && wakeWord && wakeWord->isEnabled()) {
+        // Read from microphone
+        size_t samplesRead = i2s->readMicrophone(micFrame, frameSize);
+        if (samplesRead > 0) {
+            // Process audio through wake word detector
+            wakeWord->process(micFrame, samplesRead);
+
+            // Check if wake word was detected
+            if (wakeWord->isDetected()) {
+                Serial.printf("[AudioPipeline] Wake word detected! (confidence: %.2f)\n",
+                              wakeWord->getLastConfidence());
+
+                // Trigger callback if registered
+                if (wakeWordCallback) {
+                    wakeWordCallback();
+                }
+
+                // Reset detection state for next trigger
+                wakeWord->reset();
+            }
+        }
+    } else {
+        // No wake word detection, just wait
+        delay(10);
+    }
 }
 
 void AudioPipeline::processLoopback() {
@@ -368,5 +413,32 @@ void AudioPipeline::onAudioReceived(const uint8_t* payload, size_t size, uint32_
         if (decoded > 0) {
             speakerBuffer->write(speakerFrame, decoded);
         }
+    }
+}
+
+// ============================================================================
+// Wake Word Detection
+// ============================================================================
+
+void AudioPipeline::enableWakeWord(bool enabled) {
+    if (wakeWord) {
+        wakeWord->enable(enabled);
+        wakeWordEnabled = enabled && wakeWord->isReady();
+        Serial.printf("[AudioPipeline] Wake word detection %s\n",
+                      wakeWordEnabled ? "enabled" : "disabled");
+    }
+}
+
+bool AudioPipeline::isWakeWordEnabled() const {
+    return wakeWordEnabled && wakeWord && wakeWord->isEnabled();
+}
+
+void AudioPipeline::onWakeWordDetected(WakeWordCallback callback) {
+    wakeWordCallback = callback;
+}
+
+void AudioPipeline::setWakeWordThreshold(float threshold) {
+    if (wakeWord) {
+        wakeWord->setThreshold(threshold);
     }
 }

@@ -6,19 +6,27 @@ A voice-activated, multi-room intercom system built on ESP32-S3 with full Home A
 
 - **Voice Control**: Wake word detection ("Hey Intercom") with voice commands
 - **Multi-Room Communication**: Drop in on any room in your house
-- **Touch Screen UI**: 4.3" display with intuitive interface
+- **Touch Screen UI**: 1.8" AMOLED display (368×448) with capacitive touch
 - **Home Assistant Integration**: Full MQTT Discovery, automation triggers, and dashboard controls
 - **Low Latency Audio**: Opus codec over UDP for real-time communication
 - **Hands-Free Operation**: Complete call lifecycle via voice or touch
+- **Compact Design**: All-in-one board with integrated display and touch
 
 ## Hardware Requirements
 
-- ESP32-S3 DevKit (with PSRAM recommended)
-- Waveshare 4.3" Touch Screen Display
-- I2S Microphone (e.g., INMP441)
-- I2S Audio Amplifier (e.g., MAX98357A)
-- Speaker (4-8 ohms, 3W)
-- MicroSD card slot (optional, for wake word model storage)
+### Required Components
+- **Waveshare ESP32-S3 1.8" AMOLED Touch Display** (368×448, RM67162 controller)
+  - Includes: ESP32-S3-WROOM-1, AMOLED display, CST816S touch
+  - Built-in: 16MB Flash, 8MB PSRAM, USB-C
+- **I2S MEMS Microphone**: INMP441 or equivalent
+- **I2S Audio Amplifier**: MAX98357A or equivalent
+- **Speaker**: 4-8Ω, 3W (compact speaker recommended)
+- **Jumper wires**: For connecting audio components
+
+### Optional Components
+- 3.7V LiPo battery (for portable use)
+- Custom enclosure (45mm × 70mm × 20mm minimum)
+- Acoustic foam (for mic/speaker isolation)
 
 ## Software Requirements
 
@@ -36,9 +44,13 @@ cd esp32-intercom
 pio run
 ```
 
-### 2. Configure Hardware
+### 2. Assemble Hardware
 
-Edit `include/config.h` to match your hardware pin configuration.
+Follow the comprehensive wiring guide in `docs/hardware_setup_waveshare_amoled.md`:
+- Connect INMP441 microphone to GPIOs 1, 2, 42
+- Connect MAX98357A amplifier to GPIOs 3, 4, 5
+- Connect speaker to MAX98357A output
+- Pins are pre-configured in `include/config.h` for Waveshare ESP32-S3 1.8" AMOLED
 
 ### 3. First Boot Setup
 

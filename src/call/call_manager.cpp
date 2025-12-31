@@ -1,5 +1,6 @@
 #include "call_manager.h"
 #include "../network/mqtt_client.h"
+#include "../network/mqtt_topics.h"
 #include "../audio/audio_pipeline.h"
 #include "config.h"
 
@@ -357,7 +358,7 @@ void CallManager::checkTimeout() {
 
 bool CallManager::sendCallRequest(const String& targetDeviceId, uint32_t sessionId) {
     if (mqttClient) {
-        mqttClient->sendCallRequest(targetDeviceId, sessionId);
+        mqttClient->sendCallRequest(targetDeviceId, String(sessionId));
         return true;
     }
     return false;
@@ -366,7 +367,7 @@ bool CallManager::sendCallRequest(const String& targetDeviceId, uint32_t session
 bool CallManager::sendCallAccept(const String& targetDeviceId, uint32_t sessionId) {
     if (mqttClient) {
         uint16_t localPort = getLocalUdpPort();
-        mqttClient->sendCallAccept(targetDeviceId, sessionId, localPort);
+        mqttClient->sendCallAccept(targetDeviceId, String(sessionId), localPort);
         return true;
     }
     return false;
@@ -374,7 +375,7 @@ bool CallManager::sendCallAccept(const String& targetDeviceId, uint32_t sessionI
 
 bool CallManager::sendCallReject(const String& targetDeviceId, uint32_t sessionId, const String& reason) {
     if (mqttClient) {
-        mqttClient->sendCallReject(targetDeviceId, sessionId, reason);
+        mqttClient->sendCallReject(targetDeviceId, String(sessionId), reason);
         return true;
     }
     return false;
@@ -382,7 +383,7 @@ bool CallManager::sendCallReject(const String& targetDeviceId, uint32_t sessionI
 
 bool CallManager::sendCallHangup(const String& targetDeviceId, uint32_t sessionId) {
     if (mqttClient) {
-        mqttClient->sendCallHangup(targetDeviceId, sessionId);
+        mqttClient->sendCallHangup(targetDeviceId, String(sessionId));
         return true;
     }
     return false;

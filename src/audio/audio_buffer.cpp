@@ -35,7 +35,7 @@ AudioBuffer::AudioBuffer(size_t capacity)
 
 AudioBuffer::~AudioBuffer() {
     if (buffer) {
-        free(buffer);
+        ::free(buffer);  // Use global free() function, not member function
         buffer = nullptr;
     }
 }

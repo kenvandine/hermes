@@ -2,7 +2,7 @@
  * ESP32 Multi-Room Intercom System
  * Main Entry Point
  *
- * Phase 4: Call Management - COMPLETE INTERCOM SYSTEM
+ * Phase 7: Touch Screen UI - COMPLETE INTERCOM WITH DISPLAY
  *
  * This application orchestrates all subsystems:
  * - Device management and configuration
@@ -11,7 +11,9 @@
  * - Device discovery and registry
  * - Audio pipeline (I2S, Opus, UDP)
  * - Call management (complete call lifecycle)
- * - Touch screen UI (Phase 1+)
+ * - Wake word detection (Edge Impulse)
+ * - Voice command recognition (Edge Impulse keyword spotting)
+ * - Touch screen UI (LVGL on 1.8" AMOLED)
  */
 
 #include <Arduino.h>
@@ -30,6 +32,15 @@
 #include "core/state_machine.h"
 #include "call/call_manager.h"
 
+// Phase 6 Components
+#include "commands/command_processor.h"
+#include "commands/speech_recognizer.h"
+
+// Phase 7 Components
+#include <Arduino_GFX_Library.h>
+#include <Wire.h>
+#include "ui/ui_manager.h"
+
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
@@ -40,6 +51,15 @@ MqttClient* mqttClient = nullptr;
 AudioPipeline* audioPipeline = nullptr;
 StateMachine* stateMachine = nullptr;
 CallManager* callManager = nullptr;
+
+// Phase 6: Voice Commands
+CommandProcessor* commandProcessor = nullptr;
+SpeechRecognizer* speechRecognizer = nullptr;
+
+// Phase 7: UI
+Arduino_DataBus* displayBus = nullptr;
+Arduino_GFX* gfx = nullptr;
+UIManager* uiManager = nullptr;
 
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
@@ -57,6 +77,7 @@ void setupDisplay();
 void setupAudio();
 void setupMQTT();
 void setupCallManager();
+void setupVoiceCommands();
 void printSystemInfo();
 
 // FreeRTOS Tasks
@@ -88,8 +109,9 @@ void setup() {
     Serial.println("  ESP32 Multi-Room Intercom System");
     Serial.println("  Version: " FIRMWARE_VERSION);
     Serial.println("  Build: " BUILD_DATE " " BUILD_TIME);
-    Serial.println("  Phase: 4 - Call Management");
-    Serial.println("  Status: COMPLETE SYSTEM");
+    Serial.println("  Phase: 7 - Touch Screen UI");
+    Serial.println("  Status: COMPLETE INTERCOM");
+    Serial.println("  Display: 1.8\" AMOLED (368x448)");
     Serial.println("========================================\n");
 
     // Print system information
@@ -118,6 +140,10 @@ void setup() {
     // Initialize call manager
     Serial.println("[SETUP] Setting up call manager...");
     setupCallManager();
+
+    // Initialize voice command system (Phase 6)
+    Serial.println("[SETUP] Setting up voice commands...");
+    setupVoiceCommands();
 
     Serial.println("\n[SETUP] ========================================");
     Serial.println("[SETUP] All subsystems initialized!");
@@ -238,11 +264,55 @@ void setupWiFi() {
 }
 
 void setupDisplay() {
-    Serial.println("[DISPLAY] Phase 1+ - Display implementation pending");
-    Serial.println("[DISPLAY] TODO: Initialize TFT_eSPI for Waveshare 4.3\"");
-    Serial.println("[DISPLAY] TODO: Initialize LVGL graphics library");
-    Serial.println("[DISPLAY] TODO: Setup touch screen driver");
-    Serial.println("[DISPLAY] TODO: Create idle screen with device list");
+    Serial.println("[DISPLAY] Initializing Waveshare ESP32-S3 1.8\" AMOLED...");
+
+    // Initialize I2C for touch controller
+    Wire.begin(TOUCH_SDA, TOUCH_SCL);
+    Serial.println("[DISPLAY] I2C bus initialized for touch");
+
+    // Initialize RM67162 AMOLED display (QSPI)
+    displayBus = new Arduino_ESP32QSPI(
+        TFT_CS,    // CS
+        TFT_SCL,   // SCK
+        TFT_SDA0,  // D0
+        TFT_SDA1,  // D1
+        TFT_SDA2,  // D2
+        TFT_SDA3   // D3
+    );
+
+    gfx = new Arduino_RM67162(
+        displayBus,
+        TFT_RST,           // Reset pin
+        DISPLAY_ROTATION,  // Rotation (0 = portrait)
+        true              // IPS display
+    );
+
+    if (!gfx->begin()) {
+        Serial.println("[DISPLAY] ✗ Failed to initialize display!");
+        return;
+    }
+
+    Serial.println("[DISPLAY] ✓ Display initialized successfully");
+
+    // Clear screen to black
+    gfx->fillScreen(BLACK);
+
+    // Set backlight brightness
+    pinMode(TFT_BL, OUTPUT);
+    analogWrite(TFT_BL, map(BACKLIGHT_BRIGHTNESS, 0, 100, 0, 255));
+
+    // Create UI Manager
+    Serial.println("[DISPLAY] Creating UI Manager...");
+    uiManager = new UIManager(stateMachine, deviceRegistry, callManager, audioPipeline);
+
+    if (!uiManager->begin(gfx, &Wire)) {
+        Serial.println("[DISPLAY] ✗ Failed to initialize UI Manager!");
+        delete uiManager;
+        uiManager = nullptr;
+        return;
+    }
+
+    Serial.println("[DISPLAY] ✓ UI Manager initialized successfully");
 
     // Create UI task
     xTaskCreatePinnedToCore(
@@ -271,6 +341,19 @@ void setupAudio() {
     }
 
     Serial.println("[AUDIO] ✓ Audio pipeline initialized successfully");
+
+    // Register wake word callback
+    audioPipeline->onWakeWordDetected([]() {
+        Serial.println("[AUDIO] Wake word callback triggered!");
+        if (stateMachine) {
+            // Transition to LISTENING state
+            stateMachine->setState(AppState::LISTENING);
+        }
+    });
+
+    // Enable wake word detection
+    audioPipeline->enableWakeWord(true);
+    Serial.println("[AUDIO] Wake word detection enabled");
 
     // Optional: Test loopback mode
     // Uncomment to test mic → speaker loopback
@@ -362,6 +445,70 @@ void setupCallManager() {
     Serial.println("[CallManager] ✓ Call manager initialized successfully");
 }
 
+void setupVoiceCommands() {
+    Serial.println("[VoiceCommands] Initializing voice command system...");
+
+    // Create command processor
+    commandProcessor = new CommandProcessor();
+
+    // Load known rooms from device registry
+    if (deviceRegistry) {
+        auto devices = deviceRegistry->getOnlineDevices();
+        for (auto device : devices) {
+            commandProcessor->addRoom(device->roomName);
+        }
+        Serial.printf("[VoiceCommands] Loaded %d room names\n", devices.size());
+    }
+
+    // Create speech recognizer
+    speechRecognizer = new SpeechRecognizer();
+    if (speechRecognizer->begin(AUDIO_SAMPLE_RATE, COMMAND_THRESHOLD)) {
+        Serial.println("[VoiceCommands] ✓ Speech recognizer initialized");
+
+        // Register keyword callback
+        speechRecognizer->onKeywordDetected([](const String& keyword, float confidence) {
+            if (!commandProcessor) return;
+
+            // Feed keyword to command processor
+            CommandResult result = commandProcessor->processKeyword(keyword, confidence);
+
+            if (result.isValid()) {
+                // Complete command received, execute it
+                Serial.printf("[VoiceCommands] Executing command: %s\n", result.toString().c_str());
+
+                switch (result.command) {
+                    case VoiceCommand::DROP_IN:
+                    case VoiceCommand::CALL:
+                        if (callManager) {
+                            callManager->initiateCall(result.targetRoom);
+                        }
+                        break;
+
+                    case VoiceCommand::HANG_UP:
+                        if (callManager) {
+                            callManager->hangupCall();
+                        }
+                        break;
+
+                    case VoiceCommand::CANCEL:
+                        // Return to idle
+                        if (stateMachine) {
+                            stateMachine->setState(AppState::IDLE);
+                        }
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+        });
+    } else {
+        Serial.println("[VoiceCommands] Speech recognizer not available (model not loaded)");
+    }
+
+    Serial.println("[VoiceCommands] ✓ Voice command system initialized");
+}
+
 void printSystemInfo() {
     Serial.println("[INFO] System Information:");
     Serial.printf("[INFO]   Chip Model: %s\n", ESP.getChipModel());
@@ -388,14 +535,18 @@ void printSystemInfo() {
 void uiTask(void* parameter) {
     Serial.println("[UI_TASK] UI task started");
 
+    // Wait for UI manager to be initialized
+    while (!uiManager) {
+        delay(100);
+    }
+
+    Serial.println("[UI_TASK] UI manager ready, starting update loop");
+
     while (true) {
-        // TODO Phase 1+: Update LVGL display
-        // TODO Phase 1+: Handle touch input
-        // TODO Phase 4: Update screen based on call state
+        // Update LVGL display and handle touch input
+        uiManager->update();
 
-        // LVGL needs to be called periodically
-        // lv_timer_handler();
-
+        // Maintain target frame rate (30 FPS)
         delay(1000 / UI_UPDATE_RATE_HZ);
     }
 }
@@ -411,10 +562,32 @@ void audioTask(void* parameter) {
     Serial.println("[AUDIO_TASK] Audio pipeline ready");
 
     unsigned long lastStatsTime = 0;
+    int16_t* audioFrame = (int16_t*)malloc(320 * sizeof(int16_t));  // 20ms @ 16kHz
 
     while (true) {
         // Process audio pipeline (handles all audio I/O, encoding, decoding)
+        // This includes wake word detection when in IDLE mode
         audioPipeline->process();
+
+        // Phase 6: Process speech recognition when in LISTENING state
+        if (stateMachine && stateMachine->getState() == AppState::LISTENING) {
+            if (speechRecognizer && speechRecognizer->isEnabled()) {
+                // Read audio from microphone for speech recognition
+                I2SManager* i2s = audioPipeline->getI2S();
+                if (i2s && audioFrame) {
+                    size_t samplesRead = i2s->readMicrophone(audioFrame, 320);
+                    if (samplesRead > 0) {
+                        speechRecognizer->process(audioFrame, samplesRead);
+                    }
+                }
+            }
+
+            // Check for command timeout
+            if (commandProcessor && commandProcessor->hasTimedOut()) {
+                Serial.println("[AUDIO_TASK] Command timeout - returning to IDLE");
+                stateMachine->setState(AppState::IDLE);
+            }
+        }
 
         // Print audio statistics periodically (every 10 seconds)
         if (millis() - lastStatsTime > 10000) {
@@ -483,7 +656,15 @@ void onDeviceDiscovered(const String& deviceId, const String& roomName, const St
     Serial.printf("[CALLBACK]   IP Address: %s\n", ip.c_str());
     Serial.println("[CALLBACK] ========================================\n");
 
-    // TODO Phase 4: Update UI to show new device in list
+    // Phase 7: Update UI device list
+    if (uiManager) {
+        uiManager->updateDeviceList();
+    }
+
+    // Phase 6: Add room to voice command processor
+    if (commandProcessor) {
+        commandProcessor->addRoom(roomName);
+    }
 }
 
 void onCallInitiated(const String& targetRoom) {
@@ -594,12 +775,26 @@ void onStateChanged(AppState oldState, AppState newState) {
                   StateMachine::stateToString(newState).c_str());
     Serial.println("[STATE] ========================================\n");
 
-    // TODO: Update UI based on state
-    // - IDLE: Show dashboard with device list
-    // - LISTENING: Show "Listening..." screen
-    // - CALLING: Show "Calling [Room]..." screen
-    // - RINGING: Show incoming call screen with Accept/Reject
-    // - ACTIVE_CALL: Show active call screen with Hang Up button
-    // - HANGING_UP: Show "Ending call..." message
-    // - ERROR: Show error message
+    // Handle LISTENING state (Phase 6: Voice Commands)
+    if (newState == AppState::LISTENING) {
+        if (commandProcessor && speechRecognizer) {
+            // Start listening for voice command
+            commandProcessor->startListening(COMMAND_TIMEOUT_MS);
+            speechRecognizer->enable(true);
+            Serial.println("[STATE] Started listening for voice command");
+        }
+    } else {
+        // Stop listening when leaving LISTENING state
+        if (commandProcessor && commandProcessor->isListening()) {
+            commandProcessor->stopListening();
+        }
+        if (speechRecognizer) {
+            speechRecognizer->enable(false);
+        }
+    }
+
+    // Phase 7: Update UI based on state
+    if (uiManager) {
+        uiManager->onStateChanged(oldState, newState);
+    }
 }

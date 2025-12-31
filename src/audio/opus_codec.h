@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <opus.h>
+#include "config.h"
 
 /**
  * OpusCodec

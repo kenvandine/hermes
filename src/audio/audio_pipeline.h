@@ -2,16 +2,19 @@
 #define AUDIO_PIPELINE_H
 
 #include <Arduino.h>
+#include "config.h"
 #include "i2s_manager.h"
 #include "opus_codec.h"
 #include "audio_buffer.h"
+#include "wake_word.h"
 #include "../network/udp_audio.h"
+#include <functional>
 
 /**
  * Audio Pipeline Mode
  */
 enum class AudioMode {
-    IDLE,         // Not processing audio
+    IDLE,         // Not processing audio (wake word detection active)
     LOOPBACK,     // Mic → Speaker (for testing)
     TRANSMIT,     // Mic → Opus → UDP (one-way send)
     RECEIVE,      // UDP → Opus → Speaker (one-way receive)
@@ -118,11 +121,38 @@ public:
     I2SManager* getI2S() { return i2s; }
     OpusCodec* getCodec() { return codec; }
     UdpAudio* getUdp() { return udp; }
+    WakeWord* getWakeWord() { return wakeWord; }
+
+    /**
+     * Wake word detection
+     */
+    typedef std::function<void()> WakeWordCallback;
+
+    /**
+     * Enable/disable wake word detection
+     */
+    void enableWakeWord(bool enabled);
+
+    /**
+     * Check if wake word detection is enabled
+     */
+    bool isWakeWordEnabled() const;
+
+    /**
+     * Register callback for wake word detection
+     */
+    void onWakeWordDetected(WakeWordCallback callback);
+
+    /**
+     * Set wake word detection threshold (0.0-1.0)
+     */
+    void setWakeWordThreshold(float threshold);
 
 private:
     I2SManager* i2s;
     OpusCodec* codec;
     UdpAudio* udp;
+    WakeWord* wakeWord;
 
     AudioBuffer* micBuffer;      // Mic input buffer
     AudioBuffer* speakerBuffer;  // Speaker output buffer (jitter buffer)
@@ -139,6 +169,8 @@ private:
     uint8_t* opusPacket;    // Temp buffer for Opus packet
 
     bool initialized;
+    bool wakeWordEnabled;
+    WakeWordCallback wakeWordCallback;
 
     // Processing functions for each mode
     void processIdle();
