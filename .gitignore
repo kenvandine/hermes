@@ -1,0 +1,46 @@
+# PlatformIO
+.pio/
+.vscode/
+.pioenvs/
+.piolibdeps/
+lib/readme.txt
+
+# Build artifacts
+*.bin
+*.elf
+*.map
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Credentials and secrets (never commit these!)
+src/credentials.h
+include/credentials.h
+data/wifi_config.json
+data/mqtt_config.json
+
+# Edge Impulse models (can be large, regenerate from EI studio)
+data/edge_impulse_model/*.tflite
+
+# Test outputs
+test/output/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+
+# Claude settings (already there, but adding for completeness)
+.claude/settings.local.json
