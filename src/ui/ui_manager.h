@@ -6,13 +6,18 @@
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
 #include "config.h"
+
 #include "../core/state_machine.h"
+#ifndef DISABLE_AUDIO_TEMP
 #include "../call/call_session.h"
+#endif
 #include "../call/device_registry.h"
 
 // Forward declarations
+#ifndef DISABLE_AUDIO_TEMP
 class CallManager;
 class AudioPipeline;
+#endif
 
 /**
  * UIManager
@@ -33,13 +38,19 @@ class UIManager {
 public:
     UIManager(StateMachine* stateMachine,
               DeviceRegistry* deviceRegistry,
+#ifndef DISABLE_AUDIO_TEMP
               CallManager* callManager,
-              AudioPipeline* audioPipeline);
+              AudioPipeline* audioPipeline
+#else
+              void* callManager = nullptr,
+              void* audioPipeline = nullptr
+#endif
+    );
     ~UIManager();
 
     /**
      * Initialize UI system
-     * @param display GFX display object
+     * @param display Arduino_GFX display object
      * @param touchI2C Touch I2C bus
      * @return true if successful
      */
@@ -73,6 +84,11 @@ public:
     void showError(const String& message);
 
     /**
+     * Set display brightness (0-255)
+     */
+    void setBacklight(uint8_t brightness);
+
+    /**
      * Get LVGL display driver
      */
     lv_disp_t* getDisplay() { return lvDisplay; }
@@ -80,8 +96,13 @@ public:
 private:
     StateMachine* stateMachine;
     DeviceRegistry* deviceRegistry;
+#ifndef DISABLE_AUDIO_TEMP
     CallManager* callManager;
     AudioPipeline* audioPipeline;
+#else
+    void* callManager;
+    void* audioPipeline;
+#endif
 
     // LVGL objects
     lv_disp_t* lvDisplay;
@@ -141,7 +162,6 @@ private:
     lv_obj_t* createLabel(lv_obj_t* parent, const char* text, int fontSize,
                          lv_align_t align, int x, int y);
     void updateStatusBar(lv_obj_t* screen);
-    void setBacklight(uint8_t brightness);
 };
 
 #endif // UI_MANAGER_H

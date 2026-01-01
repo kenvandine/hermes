@@ -1,8 +1,11 @@
 #include "ui_manager.h"
 #include "config.h"
+#include "Arduino_SH8601.h"
+#ifndef DISABLE_AUDIO_TEMP
 #include "../call/call_manager.h"
 #include "../audio/audio_pipeline.h"
-#include "TouchDrvCSTXXX.hpp"
+#endif
+#include <Arduino_DriveBus_Library.h>
 
 // Screen implementations
 #include "screens/screen_idle.h"
@@ -23,9 +26,16 @@ namespace ScreenSettings { lv_obj_t* create(void* uiManager); }
 static UIManager* g_uiManager = nullptr;
 
 // Touch controller instance
-static TouchDrvCSTXXX* touch = nullptr;
+static std::shared_ptr<Arduino_IIC_DriveBus> IIC_Bus = nullptr;
+static std::unique_ptr<Arduino_IIC> FT3168 = nullptr;
 
-UIManager::UIManager(StateMachine* sm, DeviceRegistry* dr, CallManager* cm, AudioPipeline* ap)
+UIManager::UIManager(StateMachine* sm, DeviceRegistry* dr,
+#ifndef DISABLE_AUDIO_TEMP
+    CallManager* cm, AudioPipeline* ap
+#else
+    void* cm, void* ap
+#endif
+)
     : stateMachine(sm),
       deviceRegistry(dr),
       callManager(cm),
@@ -51,7 +61,7 @@ UIManager::UIManager(StateMachine* sm, DeviceRegistry* dr, CallManager* cm, Audi
 UIManager::~UIManager() {
     if (lvBuf1) free(lvBuf1);
     if (lvBuf2) free(lvBuf2);
-    if (touch) delete touch;
+    // FT3168 unique_ptr cleans itself up automatically
     g_uiManager = nullptr;
 }
 
@@ -86,25 +96,28 @@ bool UIManager::begin(Arduino_GFX* display, TwoWire* touchI2C) {
     dispDrv.user_data = this;
     lvDisplay = lv_disp_drv_register(&dispDrv);
 
-    // Initialize touch driver (CST816S)
-    touch = new TouchDrvCSTXXX();
-    touch->setPins(TOUCH_RST, TOUCH_IRQ);
-    if (!touch->begin(*touchBus, CST816_SLAVE_ADDRESS, TOUCH_SDA, TOUCH_SCL)) {
-        Serial.println("[UI] WARNING: Touch init failed, retrying...");
-        delay(100);
-        if (!touch->begin(*touchBus, CST816_SLAVE_ADDRESS, TOUCH_SDA, TOUCH_SCL)) {
-            Serial.println("[UI] ERROR: Touch init failed");
-            return false;
-        }
+    // Initialize touch driver (FT3168) - Optional, display will work without it
+    IIC_Bus = std::make_shared<Arduino_HWIIC>(TOUCH_SDA, TOUCH_SCL, touchBus);
+    FT3168 = std::unique_ptr<Arduino_IIC>(new Arduino_FT3x68(IIC_Bus, 0x38 /* FT3168_DEVICE_ADDRESS */));
+    bool touchOk = FT3168->begin();
+    if (!touchOk) {
+        Serial.println("[UI] WARNING: Touch init failed - display will work without touch input");
+        FT3168.reset();
+    } else {
+        Serial.printf("[UI] ✓ Touch initialized: FT3168 (ID: 0x%X)\n", (int32_t)FT3168->IIC_Read_Device_ID());
     }
-    Serial.println("[UI] Touch initialized: CST816S");
 
-    static lv_indev_drv_t inputDrv;
-    lv_indev_drv_init(&inputDrv);
-    inputDrv.type = LV_INDEV_TYPE_POINTER;
-    inputDrv.read_cb = touchReadCallback;
-    inputDrv.user_data = this;
-    lvInput = lv_indev_drv_register(&inputDrv);
+    if (touchOk) {
+        static lv_indev_drv_t inputDrv;
+        lv_indev_drv_init(&inputDrv);
+        inputDrv.type = LV_INDEV_TYPE_POINTER;
+        inputDrv.read_cb = touchReadCallback;
+        inputDrv.user_data = this;
+        lvInput = lv_indev_drv_register(&inputDrv);
+    } else {
+        Serial.println("[UI] Display will operate without touch input");
+        lvInput = nullptr;
+    }
 
     // Create all screens
     createIdleScreen();
@@ -124,7 +137,17 @@ bool UIManager::begin(Arduino_GFX* display, TwoWire* touchI2C) {
 }
 
 void UIManager::update() {
-    // Update LVGL timer
+    // Track elapsed time for LVGL
+    static unsigned long lastTick = 0;
+    unsigned long now = millis();
+    unsigned long elapsed = now - lastTick;
+
+    if (elapsed > 0) {
+        lv_tick_inc(elapsed);  // Tell LVGL how much time has passed
+        lastTick = now;
+    }
+
+    // Update LVGL timer (process scheduled tasks)
     lv_timer_handler();
 
     // Update call info if in active call
@@ -184,8 +207,11 @@ void UIManager::onStateChanged(AppState oldState, AppState newState) {
 
 void UIManager::loadScreen(lv_obj_t* screen) {
     if (screen && screen != currentScreen) {
+        Serial.printf("[UI] Loading screen %p (current was %p)\n", screen, currentScreen);
         lv_scr_load(screen);
         currentScreen = screen;
+        Serial.println("[UI] Screen loaded, forcing refresh");
+        lv_obj_invalidate(screen);  // Force redraw
     }
 }
 
@@ -203,6 +229,15 @@ void UIManager::displayFlushCallback(lv_disp_drv_t* disp, const lv_area_t* area,
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
+    // Debug: Log first few flushes
+    static int flushCount = 0;
+    if (flushCount < 3) {
+        Serial.printf("[UI_FLUSH] #%d: x=%d-%d, y=%d-%d, w=%d, h=%d, pixels=%d\n",
+                      flushCount, area->x1, area->x2, area->y1, area->y2, w, h, w*h);
+        flushCount++;
+    }
+
+    // Draw LVGL buffer to display
     ui->gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
 
     lv_disp_flush_ready(disp);
@@ -210,14 +245,15 @@ void UIManager::displayFlushCallback(lv_disp_drv_t* disp, const lv_area_t* area,
 
 void UIManager::touchReadCallback(lv_indev_drv_t* drv, lv_indev_data_t* data) {
     UIManager* ui = (UIManager*)drv->user_data;
-    if (!ui || !touch) {
+    if (!ui || !FT3168) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
 
-    int16_t x, y;
-    uint8_t touched = touch->getPoint(&x, &y, 1);
-    if (touched > 0) {
+    uint8_t fingers = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER);
+    if (fingers > 0) {
+        int32_t x = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
+        int32_t y = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
         data->point.x = x;
         data->point.y = y;
         data->state = LV_INDEV_STATE_PRESSED;
@@ -269,8 +305,10 @@ void UIManager::updateStatusBar(lv_obj_t* screen) {
 }
 
 void UIManager::setBacklight(uint8_t brightness) {
-    // Control AMOLED backlight via PWM on TFT_BL pin
-    analogWrite(TFT_BL, brightness);
+    // Control AMOLED brightness via display command (SH8601 uses command 0x51)
+    if (gfx) {
+        ((Arduino_SH8601*)gfx)->Display_Brightness(brightness);
+    }
 }
 
 // ============================================================================
@@ -317,6 +355,7 @@ void UIManager::updateDeviceList() {
     }
 }
 
+#ifndef DISABLE_AUDIO_TEMP
 void UIManager::updateCallInfo() {
     if (!screenActiveCall || !callManager) return;
 
@@ -332,6 +371,11 @@ void UIManager::updateCallInfo() {
         ScreenActive::updateAudioLevels(micLevel, spkLevel);
     }
 }
+#else
+void UIManager::updateCallInfo() {
+    // No-op when audio is disabled
+}
+#endif
 
 void UIManager::showError(const String& message) {
     if (!screenError) return;
@@ -358,23 +402,29 @@ void UIManager::btnCallCallback(lv_event_t* e) {
 
 void UIManager::btnAcceptCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
+#ifndef DISABLE_AUDIO_TEMP
     if (ui && ui->callManager) {
         ui->callManager->acceptCall();
     }
+#endif
 }
 
 void UIManager::btnRejectCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
+#ifndef DISABLE_AUDIO_TEMP
     if (ui && ui->callManager) {
         ui->callManager->rejectCall();
     }
+#endif
 }
 
 void UIManager::btnHangupCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
+#ifndef DISABLE_AUDIO_TEMP
     if (ui && ui->callManager) {
         ui->callManager->hangupCall();
     }
+#endif
 }
 
 void UIManager::btnCancelCallback(lv_event_t* e) {

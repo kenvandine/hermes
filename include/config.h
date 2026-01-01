@@ -12,31 +12,28 @@
 #define I2S_MIC_WS_PIN          1     // Word Select (LRCLK) - Available GPIO
 #define I2S_MIC_SD_PIN          42    // Serial Data (DOUT) - Available GPIO
 
-// I2S Speaker/Amplifier Pins (MAX98357A or similar)
-// Using available GPIOs that don't conflict with display/touch (6-16)
+// I2S Speaker/Amplifier Pins (ES8311 or MAX98357A)
+// Waveshare board has ES8311 audio codec on these pins
 #define I2S_SPK_NUM             I2S_NUM_1
-#define I2S_SPK_SCK_PIN         4     // Bit Clock (BCLK) - Available GPIO
-#define I2S_SPK_WS_PIN          5     // Word Select (LRCLK) - Available GPIO
-#define I2S_SPK_SD_PIN          3     // Serial Data (DIN) - Available GPIO
+#define I2S_SPK_SCK_PIN         9     // Bit Clock (BCLK) - BCK on ES8311
+#define I2S_SPK_WS_PIN          45    // Word Select (LRCLK) - WS on ES8311
+#define I2S_SPK_SD_PIN          10    // Serial Data (DIN) - DOUT on ES8311
 
-// Waveshare ESP32-S3 1.8" AMOLED Display Pins (RM67162 controller)
+// Waveshare ESP32-S3 1.8" AMOLED Display Pins (SH8601 controller)
 // This is an integrated board - pins are fixed, not customizable
 // Display uses QSPI interface
-#define TFT_CS                  10    // Chip select
-#define TFT_DC                  11    // Data/Command
-#define TFT_RST                 13    // Reset
-#define TFT_SDA0                9     // QSPI Data 0
-#define TFT_SDA1                8     // QSPI Data 1
-#define TFT_SDA2                7     // QSPI Data 2
-#define TFT_SDA3                6     // QSPI Data 3
-#define TFT_SCL                 12    // QSPI Clock
-#define TFT_BL                  38    // Backlight control (PWM)
+#define TFT_CS                  12    // Chip select
+#define TFT_RST                 -1    // Reset (not used)
+#define TFT_SDA0                4     // QSPI Data 0
+#define TFT_SDA1                5     // QSPI Data 1
+#define TFT_SDA2                6     // QSPI Data 2
+#define TFT_SDA3                7     // QSPI Data 3
+#define TFT_SCL                 11    // QSPI Clock
 
-// Touch Screen Pins (CST816S capacitive touch controller via I2C)
+// Touch Screen Pins (FT3168 capacitive touch controller via I2C)
 #define TOUCH_SDA               15    // I2C Data
-#define TOUCH_SCL               16    // I2C Clock
-#define TOUCH_RST               21    // Touch reset
-#define TOUCH_IRQ               14    // Touch interrupt
+#define TOUCH_SCL               14    // I2C Clock
+#define TOUCH_INT               21    // Touch interrupt
 
 // Optional: Physical buttons (if not using touch screen exclusively)
 #define BUTTON_ACCEPT_PIN       -1    // -1 = not used
@@ -192,8 +189,8 @@
 #define NVS_NAMESPACE           "intercom"
 
 // Configuration keys
-#define NVS_KEY_DEVICE_ID       "device_id"
-#define NVS_KEY_ROOM_NAME       "room_name"
+#define NVS_KEY_DEVICE_ID       "living_room"
+#define NVS_KEY_ROOM_NAME       "Living Room"
 #define NVS_KEY_WIFI_SSID       "wifi_ssid"
 #define NVS_KEY_WIFI_PASS       "wifi_pass"
 #define NVS_KEY_MQTT_BROKER     "mqtt_broker"
@@ -246,7 +243,7 @@
 // ============================================================================
 
 // Ollama server settings
-#define OLLAMA_SERVER_URL       "http://192.168.1.50"  // Ollama LXD container IP
+#define OLLAMA_SERVER_URL       "http://192.168.1.21"  // Ollama LXD container IP
 #define OLLAMA_SERVER_PORT      11434                  // Default Ollama port
 #define OLLAMA_MODEL_NAME       "llama3.2:3b"          // Model (fast, 2GB)
 #define OLLAMA_TIMEOUT_MS       10000                  // 10 second timeout
@@ -254,9 +251,9 @@
 #define OLLAMA_TEMPERATURE      0.7                    // Creativity (0.0-2.0)
 
 // Piper TTS server settings
-#define PIPER_SERVER_URL        "http://192.168.1.51"  // Piper LXD container IP
+#define PIPER_SERVER_URL        "http://192.168.1.20"  // Piper LXD container IP
 #define PIPER_SERVER_PORT       10200                  // Piper Wyoming protocol port
-#define PIPER_VOICE             "en_US-lessac-medium"  // Voice model name
+#define PIPER_VOICE             "en_GB-alan-medium"  // Voice model name
 
 // Whisper speech recognition server (optional)
 #define WHISPER_SERVER_URL      "http://192.168.1.52"  // Whisper LXD container IP

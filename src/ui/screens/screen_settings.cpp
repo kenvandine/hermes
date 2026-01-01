@@ -55,8 +55,11 @@ static void sliderBrightnessCallback(lv_event_t* e) {
         snprintf(text, sizeof(text), "%d%%", value);
         lv_label_set_text(lblBrightnessValue, text);
     }
-    // Update screen brightness
-    analogWrite(TFT_BL, map(value, 0, 100, 0, 255));
+    // Update AMOLED brightness (0-100 -> 0-255)
+    UIManager* ui = (UIManager*)lv_event_get_user_data(e);
+    if (ui) {
+        ui->setBacklight(map(value, 0, 100, 0, 255));
+    }
 }
 
 lv_obj_t* create(void* uiManager) {

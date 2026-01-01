@@ -29,25 +29,32 @@
 #include "network/mqtt_client.h"
 
 // Phase 3 Components
+#ifndef DISABLE_AUDIO_TEMP
 #include "audio/audio_pipeline.h"
+#endif
 
 // Phase 4 Components
 #include "core/state_machine.h"
 #include "call/call_manager.h"
 
 // Phase 6 Components
+#ifndef DISABLE_AUDIO_TEMP
 #include "commands/command_processor.h"
 #include "commands/speech_recognizer.h"
+#endif
 
 // Phase 7 Components
 #include <Arduino_GFX_Library.h>
 #include <Wire.h>
+#include "ui/Arduino_SH8601.h"  // Waveshare's working SH8601 driver
 #include "ui/ui_manager.h"
 
 // Phase 8 Components
+#ifndef DISABLE_AUDIO_TEMP
 #include "ai/ollama_client.h"
 #include "ai/tts_engine.h"
 #include "ai/ai_manager.h"
+#endif
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -56,27 +63,34 @@
 DeviceManager* deviceManager = nullptr;
 DeviceRegistry* deviceRegistry = nullptr;
 MqttClient* mqttClient = nullptr;
+#ifndef DISABLE_AUDIO_TEMP
 AudioPipeline* audioPipeline = nullptr;
+#endif
 StateMachine* stateMachine = nullptr;
 CallManager* callManager = nullptr;
 
 // Phase 6: Voice Commands
+#ifndef DISABLE_AUDIO_TEMP
 CommandProcessor* commandProcessor = nullptr;
 SpeechRecognizer* speechRecognizer = nullptr;
+#endif
 
 // Phase 7: UI
-Arduino_DataBus* displayBus = nullptr;
 Arduino_GFX* gfx = nullptr;
 UIManager* uiManager = nullptr;
 
 // Phase 8: AI Assistant
+#ifndef DISABLE_AUDIO_TEMP
 OllamaClient* ollamaClient = nullptr;
 TTSEngine* ttsEngine = nullptr;
 AIManager* aiManager = nullptr;
+#endif
 
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
+#ifndef DISABLE_AUDIO_TEMP
 TaskHandle_t audioTaskHandle = NULL;
+#endif
 TaskHandle_t mqttTaskHandle = NULL;
 
 // ============================================================================
@@ -87,25 +101,33 @@ void setupSerial();
 void setupDeviceManager();
 void setupWiFi();
 void setupDisplay();
+#ifndef DISABLE_AUDIO_TEMP
 void setupAudio();
+#endif
 void setupMQTT();
 void setupCallManager();
+#ifndef DISABLE_AUDIO_TEMP
 void setupVoiceCommands();
 void setupAI();
+#endif
 void printSystemInfo();
 
 // FreeRTOS Tasks
 void uiTask(void* parameter);
+#ifndef DISABLE_AUDIO_TEMP
 void audioTask(void* parameter);
+#endif
 void mqttTask(void* parameter);
 
 // MQTT Callbacks
 void onDeviceDiscovered(const String& deviceId, const String& roomName, const String& ip);
+#ifndef DISABLE_AUDIO_TEMP
 void onCallInitiated(const String& targetRoom);
 void onCallRequest(const String& fromDeviceId, const String& fromRoom, const String& sessionId);
 void onCallAccept(const String& sessionId, uint16_t udpPort);
 void onCallReject(const String& sessionId, const String& reason);
 void onCallHangup(const String& sessionId);
+#endif
 
 // State machine callback
 void onStateChanged(AppState oldState, AppState newState);
@@ -147,9 +169,11 @@ void setup() {
     Serial.println("[SETUP] Setting up display...");
     setupDisplay();
 
+#ifndef DISABLE_AUDIO_TEMP
     // Initialize audio subsystem
     Serial.println("[SETUP] Setting up audio...");
     setupAudio();
+#endif
 
     // Initialize MQTT client
     Serial.println("[SETUP] Setting up MQTT...");
@@ -159,6 +183,7 @@ void setup() {
     Serial.println("[SETUP] Setting up call manager...");
     setupCallManager();
 
+#ifndef DISABLE_AUDIO_TEMP
     // Initialize voice command system (Phase 6)
     Serial.println("[SETUP] Setting up voice commands...");
     setupVoiceCommands();
@@ -166,6 +191,7 @@ void setup() {
     // Initialize AI assistant system (Phase 8)
     Serial.println("[SETUP] Setting up AI assistant...");
     setupAI();
+#endif
 
     Serial.println("\n[SETUP] ========================================");
     Serial.println("[SETUP] All subsystems initialized!");
@@ -187,6 +213,7 @@ void loop() {
     // Main loop is kept minimal since most work happens in FreeRTOS tasks
     // This can be used for low-priority background tasks
 
+#ifndef DISABLE_AUDIO_TEMP
     // Process call manager (check timeouts, state transitions)
     if (callManager) {
         callManager->process();
@@ -196,6 +223,7 @@ void loop() {
     if (aiManager) {
         aiManager->update();
     }
+#endif
 
     // Check device registry for timeouts
     if (deviceRegistry) {
@@ -291,28 +319,78 @@ void setupWiFi() {
 }
 
 void setupDisplay() {
-    Serial.println("[DISPLAY] Initializing Waveshare ESP32-S3 1.8\" AMOLED...");
+    Serial.println("[DISPLAY] Initializing Waveshare ESP32-S3 1.8\" AMOLED display...");
 
-    // Initialize I2C for touch controller
+    // Initialize I2C for touch controller and TCA9554 GPIO expander
     Wire.begin(TOUCH_SDA, TOUCH_SCL);
-    Serial.println("[DISPLAY] I2C bus initialized for touch");
+    Serial.println("[DISPLAY] I2C bus initialized for touch and GPIO expander");
 
-    // Initialize RM67162 AMOLED display (QSPI)
-    displayBus = new Arduino_ESP32QSPI(
-        TFT_CS,    // CS
-        TFT_SCL,   // SCK
-        TFT_SDA0,  // D0
-        TFT_SDA1,  // D1
-        TFT_SDA2,  // D2
-        TFT_SDA3   // D3
+    // Scan I2C bus to find devices
+    Serial.println("[DISPLAY] Scanning I2C bus...");
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        uint8_t error = Wire.endTransmission();
+        if (error == 0) {
+            Serial.printf("[DISPLAY]   Found I2C device at 0x%02X\n", addr);
+        }
+    }
+
+    // Initialize TCA9554 GPIO expander - try multiple common I2C addresses
+    // TCA9554 address depends on A0/A1/A2 pins: base 0x20-0x27
+    Serial.println("[DISPLAY] Searching for TCA9554 GPIO expander...");
+    uint8_t tca_addr = 0;
+    uint8_t possible_addrs[] = {0x20, 0x24, 0x21, 0x22, 0x23, 0x25, 0x26, 0x27};
+
+    for (int i = 0; i < 8; i++) {
+        Wire.beginTransmission(possible_addrs[i]);
+        if (Wire.endTransmission() == 0) {
+            tca_addr = possible_addrs[i];
+            Serial.printf("[DISPLAY]   Found TCA9554 at 0x%02X\n", tca_addr);
+            break;
+        }
+    }
+
+    if (tca_addr == 0) {
+        Serial.println("[DISPLAY] ✗ TCA9554 not found on I2C bus!");
+        Serial.println("[DISPLAY] Proceeding without GPIO expander...");
+    } else {
+        // Configure all TCA9554 pins as outputs (register 0x03, value 0x00)
+        Wire.beginTransmission(tca_addr);
+        Wire.write(0x03);  // Configuration register
+        Wire.write(0x00);  // All pins as outputs (0 = output, 1 = input)
+        if (Wire.endTransmission() != 0) {
+            Serial.println("[DISPLAY] ✗ Failed to configure TCA9554!");
+        } else {
+            Serial.println("[DISPLAY] ✓ TCA9554 configured (all pins as outputs)");
+        }
+
+        // Enable display power by setting pins 0, 1, 2, 6 HIGH (all expander pins used on this board)
+        Wire.beginTransmission(tca_addr);
+        Wire.write(0x01);  // Output Port register
+        Wire.write(0x47);  // Set pins 0, 1, 2, 6 HIGH (0b01000111)
+        if (Wire.endTransmission() != 0) {
+            Serial.println("[DISPLAY] ✗ Failed to enable display power!");
+        } else {
+            Serial.println("[DISPLAY] ✓ Display power enabled via TCA9554 pins 0,1,2,6");
+        }
+    }
+
+    delay(200);  // Wait for display power to stabilize
+
+    // Create QSPI bus using Arduino_GFX native QSPI support
+    Serial.println("[DISPLAY] Initializing QSPI bus with Arduino_ESP32QSPI...");
+    Arduino_DataBus *bus = new Arduino_ESP32QSPI(
+        TFT_CS,    /* CS: 12 */
+        TFT_SCL,   /* SCK: 11 */
+        TFT_SDA0,  /* SDIO0: 4 */
+        TFT_SDA1,  /* SDIO1: 5 */
+        TFT_SDA2,  /* SDIO2: 6 */
+        TFT_SDA3   /* SDIO3: 7 */
     );
 
-    gfx = new Arduino_RM67162(
-        displayBus,
-        TFT_RST,           // Reset pin
-        DISPLAY_ROTATION,  // Rotation (0 = portrait)
-        true              // IPS display
-    );
+    // Create SH8601 display driver using Arduino_GFX 1.4.9 built-in driver
+    Serial.println("[DISPLAY] Creating SH8601 display driver (Arduino_GFX 1.4.9)...");
+    gfx = new Arduino_SH8601(bus, GFX_NOT_DEFINED /* RST */, 0 /* rotation */, false /* IPS */, 368 /* width */, 448 /* height */);
 
     if (!gfx->begin()) {
         Serial.println("[DISPLAY] ✗ Failed to initialize display!");
@@ -321,16 +399,33 @@ void setupDisplay() {
 
     Serial.println("[DISPLAY] ✓ Display initialized successfully");
 
-    // Clear screen to black
-    gfx->fillScreen(BLACK);
+    // Set brightness to maximum (AMOLED displays need this!)
+    Serial.println("[DISPLAY] Setting brightness to maximum...");
+    ((Arduino_SH8601*)gfx)->Display_Brightness(255);
+    delay(100);
 
-    // Set backlight brightness
-    pinMode(TFT_BL, OUTPUT);
-    analogWrite(TFT_BL, map(BACKLIGHT_BRIGHTNESS, 0, 100, 0, 255));
+    // Test display with solid colors
+    Serial.println("[DISPLAY] Testing display with colors...");
+    gfx->fillScreen(RED);
+    delay(1000);
+    gfx->fillScreen(GREEN);
+    delay(1000);
+    gfx->fillScreen(BLUE);
+    delay(1000);
+    gfx->fillScreen(WHITE);
+    delay(1000);
+    gfx->fillScreen(BLACK);
+    Serial.println("[DISPLAY] Color test complete");
 
     // Create UI Manager
     Serial.println("[DISPLAY] Creating UI Manager...");
-    uiManager = new UIManager(stateMachine, deviceRegistry, callManager, audioPipeline);
+    uiManager = new UIManager(stateMachine, deviceRegistry,
+#ifndef DISABLE_AUDIO_TEMP
+        callManager, audioPipeline
+#else
+        nullptr, nullptr  // No call manager or audio when disabled
+#endif
+    );
 
     if (!uiManager->begin(gfx, &Wire)) {
         Serial.println("[DISPLAY] ✗ Failed to initialize UI Manager!");
@@ -355,6 +450,7 @@ void setupDisplay() {
     Serial.println("[DISPLAY] UI task created");
 }
 
+#ifndef DISABLE_AUDIO_TEMP
 void setupAudio() {
     Serial.println("[AUDIO] Initializing audio pipeline...");
 
@@ -400,6 +496,7 @@ void setupAudio() {
 
     Serial.println("[AUDIO] Audio task created");
 }
+#endif // DISABLE_AUDIO_TEMP
 
 void setupMQTT() {
     if (WiFi.status() != WL_CONNECTED) {
@@ -417,11 +514,13 @@ void setupMQTT() {
 
     // Register callbacks
     mqttClient->onDeviceAnnounced(onDeviceDiscovered);
+#ifndef DISABLE_AUDIO_TEMP
     mqttClient->onCallInitiate(onCallInitiated);
     mqttClient->onCallRequest(onCallRequest);
     mqttClient->onCallAccept(onCallAccept);
     mqttClient->onCallReject(onCallReject);
     mqttClient->onCallHangup(onCallHangup);
+#endif
 
     // Initialize MQTT
     if (!mqttClient->begin()) {
@@ -454,6 +553,7 @@ void setupCallManager() {
     // Register state change callback
     stateMachine->onStateChange(onStateChanged);
 
+#ifndef DISABLE_AUDIO_TEMP
     // Create call manager
     if (!deviceRegistry || !mqttClient || !audioPipeline) {
         Serial.println("[CallManager] WARNING: Dependencies not ready, skipping");
@@ -470,8 +570,12 @@ void setupCallManager() {
     }
 
     Serial.println("[CallManager] ✓ Call manager initialized successfully");
+#else
+    Serial.println("[CallManager] Call manager skipped (audio disabled)");
+#endif
 }
 
+#ifndef DISABLE_AUDIO_TEMP
 void setupVoiceCommands() {
     Serial.println("[VoiceCommands] Initializing voice command system...");
 
@@ -595,6 +699,7 @@ void setupAI() {
 
     Serial.println("[AI] ✓ AI assistant system ready");
 }
+#endif // DISABLE_AUDIO_TEMP
 
 void printSystemInfo() {
     Serial.println("[INFO] System Information:");
@@ -638,6 +743,7 @@ void uiTask(void* parameter) {
     }
 }
 
+#ifndef DISABLE_AUDIO_TEMP
 void audioTask(void* parameter) {
     Serial.println("[AUDIO_TASK] Audio task started");
 
@@ -713,6 +819,7 @@ void audioTask(void* parameter) {
         delay(1);
     }
 }
+#endif // DISABLE_AUDIO_TEMP
 
 void mqttTask(void* parameter) {
     Serial.println("[MQTT_TASK] MQTT task started");
@@ -758,12 +865,15 @@ void onDeviceDiscovered(const String& deviceId, const String& roomName, const St
         uiManager->updateDeviceList();
     }
 
+#ifndef DISABLE_AUDIO_TEMP
     // Phase 6: Add room to voice command processor
     if (commandProcessor) {
         commandProcessor->addRoom(roomName);
     }
+#endif
 }
 
+#ifndef DISABLE_AUDIO_TEMP
 void onCallInitiated(const String& targetRoom) {
     Serial.println("[CALLBACK] ========================================");
     Serial.printf("[CALLBACK] Call initiation requested from Home Assistant\n");
@@ -864,6 +974,7 @@ void onCallHangup(const String& sessionId) {
     // Handle call hangup
     callManager->handleCallHangup(sessionId.toInt());
 }
+#endif // DISABLE_AUDIO_TEMP
 
 void onStateChanged(AppState oldState, AppState newState) {
     Serial.println("[STATE] ========================================");
@@ -872,6 +983,7 @@ void onStateChanged(AppState oldState, AppState newState) {
                   StateMachine::stateToString(newState).c_str());
     Serial.println("[STATE] ========================================\n");
 
+#ifndef DISABLE_AUDIO_TEMP
     // Handle LISTENING state (Phase 6: Voice Commands)
     if (newState == AppState::LISTENING) {
         if (commandProcessor && speechRecognizer) {
@@ -889,6 +1001,7 @@ void onStateChanged(AppState oldState, AppState newState) {
             speechRecognizer->enable(false);
         }
     }
+#endif
 
     // Phase 7: Update UI based on state
     if (uiManager) {

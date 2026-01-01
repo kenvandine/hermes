@@ -51,7 +51,17 @@ bool MqttClient::begin() {
 
     Serial.printf("[MQTT] Configuring broker: %s:%d\n", broker.c_str(), port);
 
-    mqtt->setServer(broker.c_str(), port);
+    // Check if broker is an IP address or hostname
+    IPAddress brokerIP;
+    if (brokerIP.fromString(broker)) {
+        // It's an IP address, use IPAddress overload (no DNS lookup)
+        mqtt->setServer(brokerIP, port);
+        Serial.printf("[MQTT] Using IP address: %s\n", brokerIP.toString().c_str());
+    } else {
+        // It's a hostname, use const char* overload (will do DNS lookup)
+        mqtt->setServer(broker.c_str(), port);
+        Serial.printf("[MQTT] Using hostname (DNS): %s\n", broker.c_str());
+    }
     mqtt->setCallback(MqttClient::messageCallback);
     mqtt->setKeepAlive(MQTT_KEEPALIVE);
 
@@ -82,6 +92,10 @@ bool MqttClient::connect() {
 
     String username = deviceManager->getMqttUsername();
     String password = deviceManager->getMqttPassword();
+
+    Serial.printf("[MQTT] Auth: username='%s' (len=%d), password='%s' (len=%d)\n",
+                  username.c_str(), username.length(),
+                  password.length() > 0 ? "***" : "(empty)", password.length());
 
     if (username.length() > 0 && password.length() > 0) {
         connected = mqtt->connect(
