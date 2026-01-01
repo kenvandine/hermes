@@ -7,7 +7,7 @@
  * WakeWord
  *
  * Integrates Edge Impulse wake word detection.
- * Continuously processes audio to detect the wake phrase ("Hey Intercom").
+ * Continuously processes audio to detect the wake phrase ("Hey Hermes").
  *
  * To use this class:
  * 1. Train a wake word model on Edge Impulse (https://edgeimpulse.com)

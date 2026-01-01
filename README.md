@@ -8,7 +8,7 @@ A voice-activated, AI-enhanced multi-room intercom system built on ESP32-S3 with
 ## Features
 
 - **AI Assistant**: Ollama LLM integration with Piper TTS for natural language queries
-- **Voice Control**: Wake word detection ("Hey Intercom") with voice commands
+- **Voice Control**: Wake word detection ("Hey Hermes") with voice commands
 - **Multi-Room Communication**: Drop in on any room in your house
 - **Touch Screen UI**: 1.8" AMOLED display (368×448) with capacitive touch
 - **Home Assistant Integration**: Full MQTT Discovery, automation triggers, and dashboard controls
@@ -84,7 +84,7 @@ ollama pull llama3.2:3b
 ### 5. Train Wake Word (Optional)
 
 1. Create Edge Impulse project
-2. Record wake word samples ("Hey Intercom")
+2. Record wake word samples ("Hey Hermes")
 3. Train model and export for Arduino
 4. Place model files in `data/edge_impulse_model/`
 
@@ -150,7 +150,7 @@ entities:
 
 ## Voice Commands
 
-- **"Hey Intercom"** - Wake word to activate listening
+- **"Hey Hermes"** - Wake word to activate listening
 - **"Drop in on [Room Name]"** - Initiate call to room
 - **"Call [Room Name]"** - Initiate call to room
 - **"Hang up"** - End active call

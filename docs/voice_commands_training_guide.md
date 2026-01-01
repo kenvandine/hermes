@@ -317,7 +317,7 @@ if (commandProcessor) {
 ## Step 13: Testing & Tuning
 
 ### Test Flow:
-1. Say "Hey Intercom" (wake word)
+1. Say "Hey Hermes" (wake word)
 2. Device enters LISTENING state
 3. Say "Drop in on kitchen"
 4. Device should detect `drop_in` and `kitchen` keywords

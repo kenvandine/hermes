@@ -18,9 +18,9 @@ This guide walks you through training a custom wake word model for the ESP32 int
 ## Step 2: Collect Training Data
 
 You need to record samples of:
-- **Your wake phrase**: "Hey Intercom" (or your custom phrase)
+- **Your wake phrase**: "Hey Hermes" (or your custom phrase)
 - **Background noise**: Ambient room noise, other voices, music
-- **Similar phrases**: "Hey there", "OK Intercom", etc. (to reduce false positives)
+- **Similar phrases**: "Hey there", "OK Hermes", etc. (to reduce false positives)
 
 ### Recording Guidelines
 
@@ -279,7 +279,7 @@ After deployment, you may need to adjust:
 For Phase 6 (voice commands), you can extend this model:
 
 **Classes**:
-- `wake_word`: "Hey Intercom"
+- `wake_word`: "Hey Hermes"
 - `drop_in`: "Drop in on [room]"
 - `hang_up`: "Hang up"
 - `cancel`: "Cancel"
