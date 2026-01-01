@@ -29,6 +29,13 @@ src/credentials.h
 include/credentials.h
 data/wifi_config.json
 data/mqtt_config.json
+.env
+.env.local
+.env.*.local
+include/build_config.h
+
+# Allow .env.example to be committed
+!.env.example
 
 # Edge Impulse models (can be large, regenerate from EI studio)
 data/edge_impulse_model/*.tflite

@@ -1,6 +1,7 @@
 #include "device_manager.h"
 #include <WiFi.h>
 #include "config.h"
+#include "build_config.h"
 
 DeviceManager::DeviceManager()
     : micVolume(DEFAULT_MIC_VOLUME),
@@ -71,15 +72,23 @@ void DeviceManager::loadConfig() {
         speakerVolume = preferences.getUChar(NVS_KEY_VOLUME_SPK, DEFAULT_SPEAKER_VOLUME);
         brightness = preferences.getUChar(NVS_KEY_BRIGHTNESS, BACKLIGHT_BRIGHTNESS);
 
-        // Load MQTT settings
-        mqttBroker = preferences.getString(NVS_KEY_MQTT_BROKER, "");
-        mqttPort = preferences.getUShort(NVS_KEY_MQTT_PORT, MQTT_PORT);
-        mqttUsername = preferences.getString(NVS_KEY_MQTT_USER, "");
-        mqttPassword = preferences.getString(NVS_KEY_MQTT_PASS, "");
+        // Load room name and MQTT settings from build configuration
+        roomName = BUILD_ROOM_NAME;
 
-        // Load WiFi settings
-        wifiSsid = preferences.getString(NVS_KEY_WIFI_SSID, "");
-        wifiPassword = preferences.getString(NVS_KEY_WIFI_PASS, "");
+        mqttBroker = BUILD_MQTT_BROKER;
+        mqttPort = BUILD_MQTT_PORT;
+        mqttUsername = BUILD_MQTT_USERNAME;
+        mqttPassword = BUILD_MQTT_PASSWORD;
+
+        Serial.printf("[DeviceManager] Room: %s\n", roomName.c_str());
+        Serial.printf("[DeviceManager] MQTT config: broker='%s:%d', user='%s', pass='%s'\n",
+                      mqttBroker.c_str(), mqttPort, mqttUsername.c_str(), mqttPassword.c_str());
+
+        // Load WiFi settings from build configuration
+        wifiSsid = BUILD_WIFI_SSID;
+        wifiPassword = BUILD_WIFI_PASSWORD;
+
+        Serial.printf("[DeviceManager] WiFi config: SSID='%s'\n", wifiSsid.c_str());
     }
 }
 
