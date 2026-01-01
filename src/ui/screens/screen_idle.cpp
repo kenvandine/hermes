@@ -43,7 +43,7 @@ lv_obj_t* ScreenIdle::create(void* uiManager) {
 
     // Room name label
     lv_obj_t* lblRoomName = lv_label_create(header);
-    lv_label_set_text(lblRoomName, "Intercom");  // Will be updated
+    lv_label_set_text(lblRoomName, "HERMES");  // Will be updated with room name
     lv_obj_set_style_text_font(lblRoomName, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(lblRoomName, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(lblRoomName);
@@ -64,7 +64,7 @@ lv_obj_t* ScreenIdle::create(void* uiManager) {
 
     // Placeholder text (will be replaced by device buttons)
     lv_obj_t* lblPlaceholder = lv_label_create(deviceListContainer);
-    lv_label_set_text(lblPlaceholder, "Discovering devices...\n\nMake sure other intercoms\nare powered on and\nconnected to WiFi.");
+    lv_label_set_text(lblPlaceholder, "Discovering devices...\n\nMake sure other HERMES\ndevices are powered on\nand connected to WiFi.");
     lv_obj_set_style_text_font(lblPlaceholder, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lblPlaceholder, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     lv_obj_set_style_text_align(lblPlaceholder, LV_TEXT_ALIGN_CENTER, 0);
@@ -130,7 +130,7 @@ void ScreenIdle::updateDeviceList(lv_obj_t* screen, DeviceRegistry* deviceRegist
     if (devices.empty()) {
         // Show placeholder
         lv_obj_t* lblPlaceholder = lv_label_create(deviceListContainer);
-        lv_label_set_text(lblPlaceholder, "No devices found\n\nMake sure other intercoms\nare powered on.");
+        lv_label_set_text(lblPlaceholder, "No devices found\n\nMake sure other HERMES\ndevices are powered on.");
         lv_obj_set_style_text_font(lblPlaceholder, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(lblPlaceholder, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
         lv_obj_set_style_text_align(lblPlaceholder, LV_TEXT_ALIGN_CENTER, 0);

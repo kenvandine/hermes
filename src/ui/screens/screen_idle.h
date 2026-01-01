@@ -16,7 +16,7 @@
  *
  * Layout (368x448):
  * ┌──────────────────────┐
- * │   Kitchen Intercom   │ ← Header (50px)
+ * │   Kitchen HERMES     │ ← Header (50px)
  * ├──────────────────────┤
  * │  [Living Room]   ●   │ ← Device buttons
  * │  [Bedroom]       ●   │   (60px each)
