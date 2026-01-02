@@ -89,9 +89,24 @@ public:
     void setBacklight(uint8_t brightness);
 
     /**
+     * Set audio volume (0-100)
+     */
+    void setVolume(uint8_t volume);
+
+    /**
      * Get LVGL display driver
      */
     lv_disp_t* getDisplay() { return lvDisplay; }
+
+    /**
+     * Show settings screen
+     */
+    void showSettings();
+
+    /**
+     * Show idle/home screen
+     */
+    void showIdle();
 
 private:
     StateMachine* stateMachine;

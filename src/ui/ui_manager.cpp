@@ -377,6 +377,19 @@ void UIManager::updateCallInfo() {
 }
 #endif
 
+#ifndef DISABLE_AUDIO_TEMP
+void UIManager::setVolume(uint8_t volume) {
+    if (audioPipeline) {
+        audioPipeline->setVolume(volume);
+        Serial.printf("[UI] Volume set to %d%%\n", volume);
+    }
+}
+#else
+void UIManager::setVolume(uint8_t volume) {
+    // No-op when audio is disabled
+}
+#endif
+
 void UIManager::showError(const String& message) {
     if (!screenError) return;
 
@@ -389,6 +402,18 @@ void UIManager::showError(const String& message) {
 
     // Auto-return to idle after 3 seconds
     // TODO: Use LVGL timer
+}
+
+void UIManager::showSettings() {
+    if (screenSettings) {
+        loadScreen(screenSettings);
+    }
+}
+
+void UIManager::showIdle() {
+    if (screenIdle) {
+        loadScreen(screenIdle);
+    }
 }
 
 // ============================================================================

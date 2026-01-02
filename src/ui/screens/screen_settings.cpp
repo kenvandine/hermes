@@ -35,7 +35,9 @@ static lv_obj_t* lblBrightnessValue = nullptr;
 
 static void btnBackCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
-    // Return to idle screen
+    if (ui) {
+        ui->showIdle();
+    }
 }
 
 static void sliderVolumeCallback(lv_event_t* e) {
@@ -46,6 +48,10 @@ static void sliderVolumeCallback(lv_event_t* e) {
         lv_label_set_text(lblVolumeValue, text);
     }
     // Update audio volume
+    UIManager* ui = (UIManager*)lv_event_get_user_data(e);
+    if (ui) {
+        ui->setVolume(value);
+    }
 }
 
 static void sliderBrightnessCallback(lv_event_t* e) {

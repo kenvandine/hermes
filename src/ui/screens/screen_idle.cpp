@@ -22,8 +22,10 @@ static void deviceButtonCallback(lv_event_t* e) {
 // Settings button callback
 static void settingsButtonCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
-    // TODO: Load settings screen
     Serial.println("[UI] Settings button pressed");
+    if (ui) {
+        ui->showSettings();
+    }
 }
 
 lv_obj_t* ScreenIdle::create(void* uiManager) {
