@@ -148,7 +148,7 @@
 // ============================================================================
 
 // Wake word detection
-#define WAKE_WORD_ENABLED       false  // Set true when Edge Impulse model ready
+#define WAKE_WORD_ENABLED       true   // Edge Impulse model integrated
 #define WAKE_WORD_THRESHOLD     0.8    // 0.0 - 1.0, higher = stricter
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
 

@@ -1,9 +1,8 @@
 #include "wake_word.h"
 #include "config.h"
 
-// TODO: Uncomment when Edge Impulse model is trained and exported
-// Include your Edge Impulse model header here:
-// #include <your_project_name_inferencing.h>
+// Edge Impulse wake word model
+#include <Hey_Hermes_-_Wake_Word_inferencing.h>
 
 WakeWord::WakeWord()
     : initialized(false),
@@ -40,20 +39,21 @@ bool WakeWord::begin(uint32_t rate, float thresh) {
     sampleRate = rate;
     threshold = thresh;
 
-    // TODO: Initialize Edge Impulse model
-    // Example (adjust for your model):
-    /*
-    ei_impulse_result_t result = { 0 };
+    // Print model info
+    Serial.printf("[WakeWord] Model: %s\n", EI_CLASSIFIER_PROJECT_NAME);
+    Serial.printf("[WakeWord] Sample rate: %d Hz\n", EI_CLASSIFIER_FREQUENCY);
+    Serial.printf("[WakeWord] Sample length: %d ms (%d samples)\n",
+                  EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16, EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    Serial.printf("[WakeWord] Classes: %d\n", EI_CLASSIFIER_LABEL_COUNT);
+    Serial.printf("[WakeWord] Slice size: %d samples\n", EI_CLASSIFIER_SLICE_SIZE);
 
-    // Get model info
-    ei_printf("Inferencing settings:\n");
-    ei_printf("\tInterval: %.2f ms.\n", (float)EI_CLASSIFIER_INTERVAL_MS);
-    ei_printf("\tFrame size: %d\n", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
-    ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
-    ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) /
-                                        sizeof(ei_classifier_inferencing_categories[0]));
+    // Verify sample rate matches
+    if (rate != EI_CLASSIFIER_FREQUENCY) {
+        Serial.printf("[WakeWord] WARNING: Sample rate mismatch (%d vs %d)\n",
+                      rate, EI_CLASSIFIER_FREQUENCY);
+    }
 
-    // Allocate inference buffer
+    // Allocate inference buffer for DSP input
     inferenceBufferSize = EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE;
     inferenceBuffer = (float*)malloc(inferenceBufferSize * sizeof(float));
 
@@ -61,19 +61,20 @@ bool WakeWord::begin(uint32_t rate, float thresh) {
         Serial.println("[WakeWord] ERROR: Failed to allocate inference buffer");
         return false;
     }
-    */
 
-    // Allocate sample conversion buffer
-    sampleBufferSize = 512;  // Adjust based on your model's requirements
+    // Allocate sample conversion buffer (one slice at a time)
+    sampleBufferSize = EI_CLASSIFIER_SLICE_SIZE;
     sampleBuffer = (float*)malloc(sampleBufferSize * sizeof(float));
 
     if (!sampleBuffer) {
         Serial.println("[WakeWord] ERROR: Failed to allocate sample buffer");
+        free(inferenceBuffer);
+        inferenceBuffer = nullptr;
         return false;
     }
 
     initialized = true;
-    Serial.printf("[WakeWord] Initialized (threshold: %.2f)\n", threshold);
+    Serial.printf("[WakeWord] ✓ Initialized (threshold: %.2f)\n", threshold);
 
     return true;
 #endif
@@ -165,19 +166,29 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
 #if !WAKE_WORD_ENABLED
     return false;
 #else
-    // TODO: Implement Edge Impulse inference
-    // Example implementation:
-    /*
     unsigned long startTime = millis();
 
-    // Convert samples to float
-    convertSamples(samples, sampleBuffer, min(sampleCount, sampleBufferSize));
+    // Edge Impulse expects exactly EI_CLASSIFIER_RAW_SAMPLE_COUNT samples (16000)
+    if (sampleCount < EI_CLASSIFIER_RAW_SAMPLE_COUNT) {
+        return false;  // Not enough samples yet
+    }
 
-    // Prepare signal for inference
+    // Convert samples to float (-1.0 to 1.0 range)
+    convertSamples(samples, inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+
+    // Prepare signal structure for Edge Impulse
     signal_t signal;
-    numpy::signal_from_buffer(sampleBuffer, sampleCount, &signal);
+    signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+    signal.get_data = [](size_t offset, size_t length, float *out_ptr) -> int {
+        // This is called by Edge Impulse to get chunks of data
+        // We already have all data in inferenceBuffer, so just copy it
+        return EIDSP_OK;
+    };
 
-    // Run inference
+    // Use numpy to create signal from our buffer
+    numpy::signal_from_buffer(inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT, &signal);
+
+    // Run classifier
     ei_impulse_result_t result = { 0 };
     EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false);
 
@@ -188,18 +199,27 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
         return false;
     }
 
-    // Check results
-    // Assuming your model has classes like: "noise", "unknown", "hey_intercom"
+    // Find the "Hey Hermes" class and check confidence
+    // Edge Impulse model will have labels like "Hey Hermes", "noise", "unknown"
     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-        if (strcmp(result.classification[ix].label, "hey_intercom") == 0) {
-            lastConfidence = result.classification[ix].value;
+        const char* label = result.classification[ix].label;
+        float confidence = result.classification[ix].value;
 
-            if (lastConfidence >= threshold) {
+        // Check if this is the wake word class (case-insensitive contains "hermes")
+        if (strstr(label, "Hermes") != nullptr || strstr(label, "hermes") != nullptr) {
+            lastConfidence = confidence;
+
+            #ifdef DEBUG_WAKE_WORD
+            Serial.printf("[WakeWord] %s: %.2f\n", label, confidence);
+            #endif
+
+            if (confidence >= threshold) {
+                Serial.printf("[WakeWord] ✓ Detected! Confidence: %.2f (threshold: %.2f)\n",
+                              confidence, threshold);
                 return true;
             }
         }
     }
-    */
 
     return false;
 #endif

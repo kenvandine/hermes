@@ -27,8 +27,8 @@ namespace ScreenListening {
 static void btnCancelCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
     if (ui) {
-        // Cancel listening, return to idle
-        // ui->getStateMachine()->setState(AppState::IDLE);
+        Serial.println("[UI] Cancel listening pressed");
+        ui->cancelListening();
     }
 }
 

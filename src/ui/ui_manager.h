@@ -108,6 +108,11 @@ public:
      */
     void showIdle();
 
+    /**
+     * Cancel listening mode and return to idle
+     */
+    void cancelListening();
+
 private:
     StateMachine* stateMachine;
     DeviceRegistry* deviceRegistry;

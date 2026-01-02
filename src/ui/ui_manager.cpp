@@ -416,6 +416,12 @@ void UIManager::showIdle() {
     }
 }
 
+void UIManager::cancelListening() {
+    if (stateMachine) {
+        stateMachine->setState(AppState::IDLE);
+    }
+}
+
 // ============================================================================
 // Button Callbacks (Placeholders)
 // ============================================================================
