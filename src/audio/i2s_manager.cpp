@@ -6,6 +6,7 @@ I2SManager::I2SManager()
       speakerPort(I2S_SPK_NUM),
       micSampleRate(0),
       speakerSampleRate(0),
+      codecReady(false),
       micReady(false),
       speakerReady(false),
       muted(false),
@@ -15,13 +16,39 @@ I2SManager::I2SManager()
 I2SManager::~I2SManager() {
     stopMicrophone();
     stopSpeaker();
+    if (codecReady) {
+        codec.powerDown();
+    }
+}
+
+bool I2SManager::begin(uint32_t sampleRate) {
+    Serial.println("[I2S] Initializing ES8311 audio codec...");
+
+    // Initialize ES8311 codec on I2C bus
+    // I2C pins are defined in config.h (TOUCH_SDA=15, TOUCH_SCL=14)
+    if (!codec.begin(15, 14, sampleRate)) {
+        Serial.println("[I2S] ERROR: Failed to initialize ES8311 codec");
+        return false;
+    }
+
+    codecReady = true;
+    Serial.println("[I2S] ES8311 codec initialized successfully");
+    return true;
 }
 
 bool I2SManager::beginMicrophone(uint32_t sampleRate, i2s_bits_per_sample_t bitsPerSample) {
-    Serial.printf("[I2S] Initializing microphone on I2S%d @ %d Hz\n", micPort, sampleRate);
+    if (!codecReady) {
+        Serial.println("[I2S] ERROR: Call begin() first to initialize ES8311 codec");
+        return false;
+    }
 
+    Serial.printf("[I2S] Initializing microphone on I2S%d @ %d Hz\n", micPort, sampleRate);
+    Serial.println("[I2S] Using PDM mode for digital microphone");
+
+    // PDM mode configuration for digital PDM microphone
+    // The microphone is NOT connected to ES8311 ADC, it's a separate PDM mic
     i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM),
         .sample_rate = sampleRate,
         .bits_per_sample = bitsPerSample,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
@@ -31,14 +58,16 @@ bool I2SManager::beginMicrophone(uint32_t sampleRate, i2s_bits_per_sample_t bits
         .dma_buf_len = I2S_DMA_BUF_LEN,
         .use_apll = false,
         .tx_desc_auto_clear = false,
-        .fixed_mclk = 0
+        .fixed_mclk = 0  // PDM doesn't use MCLK
     };
 
+    // PDM pin configuration: only CLK (WS) and DATA (SD) are used
     i2s_pin_config_t pin_config = {
-        .bck_io_num = I2S_MIC_SCK_PIN,
-        .ws_io_num = I2S_MIC_WS_PIN,
+        .mck_io_num = I2S_PIN_NO_CHANGE,  // PDM doesn't use MCLK
+        .bck_io_num = I2S_PIN_NO_CHANGE,  // PDM doesn't use BCLK
+        .ws_io_num = I2S_MIC_WS_PIN,      // PDM CLK (GPIO 45)
         .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = I2S_MIC_SD_PIN
+        .data_in_num = I2S_MIC_SD_PIN     // PDM DATA (GPIO 10)
     };
 
     esp_err_t err = i2s_driver_install(micPort, &i2s_config, 0, NULL);
@@ -60,13 +89,20 @@ bool I2SManager::beginMicrophone(uint32_t sampleRate, i2s_bits_per_sample_t bits
     micSampleRate = sampleRate;
     micReady = true;
 
-    Serial.println("[I2S] Microphone initialized successfully");
+    Serial.println("[I2S] Microphone initialized successfully in PDM mode");
     return true;
 }
 
 bool I2SManager::beginSpeaker(uint32_t sampleRate, i2s_bits_per_sample_t bitsPerSample) {
+    if (!codecReady) {
+        Serial.println("[I2S] ERROR: Call begin() first to initialize ES8311 codec");
+        return false;
+    }
+
     Serial.printf("[I2S] Initializing speaker on I2S%d @ %d Hz\n", speakerPort, sampleRate);
 
+    // Speaker I2S configuration for ES8311 DAC
+    // ES8311 requires MCLK signal for proper operation
     i2s_config_t i2s_config = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
         .sample_rate = sampleRate,
@@ -78,10 +114,11 @@ bool I2SManager::beginSpeaker(uint32_t sampleRate, i2s_bits_per_sample_t bitsPer
         .dma_buf_len = I2S_DMA_BUF_LEN,
         .use_apll = false,
         .tx_desc_auto_clear = true,
-        .fixed_mclk = 0
+        .fixed_mclk = sampleRate * 256  // MCLK = 256 * sample_rate (e.g., 4.096 MHz for 16kHz)
     };
 
     i2s_pin_config_t pin_config = {
+        .mck_io_num = I2S_SPK_MCLK_PIN,   // MCLK on GPIO 42 for ES8311
         .bck_io_num = I2S_SPK_SCK_PIN,
         .ws_io_num = I2S_SPK_WS_PIN,
         .data_out_num = I2S_SPK_SD_PIN,
@@ -107,7 +144,7 @@ bool I2SManager::beginSpeaker(uint32_t sampleRate, i2s_bits_per_sample_t bitsPer
     speakerSampleRate = sampleRate;
     speakerReady = true;
 
-    Serial.println("[I2S] Speaker initialized successfully");
+    Serial.println("[I2S] Speaker initialized successfully with MCLK");
     return true;
 }
 
@@ -193,6 +230,11 @@ size_t I2SManager::writeSpeaker(const int16_t* buffer, size_t sampleCount) {
 
 void I2SManager::setVolume(uint8_t vol) {
     volume = (vol > 100) ? 100 : vol;
+
+    // Also set codec hardware volume
+    if (codecReady) {
+        codec.setVolume(volume);
+    }
 }
 
 uint8_t I2SManager::getVolume() const {

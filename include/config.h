@@ -5,19 +5,21 @@
 // HARDWARE PIN DEFINITIONS
 // ============================================================================
 
-// I2S Microphone Pins (INMP441 or similar)
-// Using available GPIOs on Waveshare ESP32-S3 1.8" AMOLED
+// I2S Audio Pins - Waveshare ESP32-S3-Touch-AMOLED-1.8"
+// ES8311 codec with built-in microphone and speaker
+// Based on ESPHome config for ESP32-S3-Touch-AMOLED-1.75 (same pinout)
 #define I2S_MIC_NUM             I2S_NUM_0
-#define I2S_MIC_SCK_PIN         2     // Bit Clock (BCLK) - Available GPIO
-#define I2S_MIC_WS_PIN          1     // Word Select (LRCLK) - Available GPIO
-#define I2S_MIC_SD_PIN          42    // Serial Data (DOUT) - Available GPIO
+#define I2S_MIC_SCK_PIN         9     // Bit Clock (BCLK) - shared
+#define I2S_MIC_WS_PIN          45    // Word Select (LRCLK) - shared
+#define I2S_MIC_SD_PIN          10    // Serial Data IN (DIN) - microphone
+#define I2S_MIC_MCLK_PIN        42    // Master Clock (MCLK) - shared
 
-// I2S Speaker/Amplifier Pins (ES8311 or MAX98357A)
-// Waveshare board has ES8311 audio codec on these pins
+// I2S Speaker Pins (ES8311 DAC output)
 #define I2S_SPK_NUM             I2S_NUM_1
-#define I2S_SPK_SCK_PIN         9     // Bit Clock (BCLK) - BCK on ES8311
-#define I2S_SPK_WS_PIN          45    // Word Select (LRCLK) - WS on ES8311
-#define I2S_SPK_SD_PIN          10    // Serial Data (DIN) - DOUT on ES8311
+#define I2S_SPK_SCK_PIN         9     // Bit Clock (BCLK) - shared
+#define I2S_SPK_WS_PIN          45    // Word Select (LRCLK) - shared
+#define I2S_SPK_SD_PIN          8     // Serial Data OUT (DOUT) - speaker
+#define I2S_SPK_MCLK_PIN        42    // Master Clock (MCLK) - shared
 
 // Waveshare ESP32-S3 1.8" AMOLED Display Pins (SH8601 controller)
 // This is an integrated board - pins are fixed, not customizable

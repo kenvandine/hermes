@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <driver/i2s.h>
+#include "ES8311.h"
 
 /**
  * I2SManager
@@ -22,7 +23,16 @@ public:
     ~I2SManager();
 
     /**
+     * Initialize audio system (ES8311 codec + I2S)
+     * Must be called before beginMicrophone or beginSpeaker
+     * @param sampleRate Sample rate in Hz (e.g., 16000)
+     * @return true if successful
+     */
+    bool begin(uint32_t sampleRate = 16000);
+
+    /**
      * Initialize I2S for microphone input
+     * Note: Call begin() first to initialize ES8311 codec
      * @param sampleRate Sample rate in Hz (e.g., 16000)
      * @param bitsPerSample Bits per sample (16 or 32)
      * @return true if successful
@@ -99,12 +109,15 @@ public:
     uint32_t getSpeakerSampleRate() const;
 
 private:
+    ES8311 codec;  // Audio codec for built-in mic/speaker
+
     i2s_port_t micPort;
     i2s_port_t speakerPort;
 
     uint32_t micSampleRate;
     uint32_t speakerSampleRate;
 
+    bool codecReady;
     bool micReady;
     bool speakerReady;
     bool muted;

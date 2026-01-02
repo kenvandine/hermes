@@ -36,6 +36,15 @@ bool AudioPipeline::begin(uint32_t sampleRateHz) {
 
     // Create I2S manager
     i2s = new I2SManager();
+
+    // Initialize ES8311 codec first
+    if (!i2s->begin(sampleRate)) {
+        Serial.println("[AudioPipeline] ERROR: Failed to initialize ES8311 codec");
+        stop();
+        return false;
+    }
+
+    // Then initialize I2S microphone and speaker
     if (!i2s->beginMicrophone(sampleRate) || !i2s->beginSpeaker(sampleRate)) {
         Serial.println("[AudioPipeline] ERROR: Failed to initialize I2S");
         stop();
