@@ -95,7 +95,7 @@ TaskHandle_t mqttTaskHandle = NULL;
 
 // Audio recording buffer for debugging
 int16_t* debugAudioBuffer = nullptr;
-const size_t DEBUG_BUFFER_SIZE = 16000 * 5; // 5 seconds at 16kHz
+const size_t DEBUG_BUFFER_SIZE = 16000 * 3; // 3 seconds at 16kHz (reduced to avoid download timeout)
 size_t debugBufferIndex = 0;
 bool isRecording = false;
 
