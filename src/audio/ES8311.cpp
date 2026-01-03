@@ -16,39 +16,57 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
 
     delay(10);
 
-    // Reset codec
-    Serial.println("[ES8311] Resetting codec...");
-    writeReg(ES8311_REG00, 0x1F);  // Reset and power down all modules
-    delay(10);
-    writeReg(ES8311_REG00, 0x00);  // Release reset
+    Serial.println("[ES8311] Initializing with ESP-ADF sequence...");
+
+    // Noise immunity - write REG44 twice as per ESP-ADF
+    writeReg(ES8311_REG44, 0x08);
+    writeReg(ES8311_REG44, 0x08);
+
+    // Clock manager setup
+    writeReg(ES8311_REG01, 0x30);
+    writeReg(ES8311_REG02, 0x00);
+    writeReg(ES8311_REG03, 0x10);
+    writeReg(ES8311_REG16, 0x24);  // ADC scale
+    writeReg(ES8311_REG04, 0x10);
+    writeReg(ES8311_REG05, 0x00);
+
+    // System configuration
+    writeReg(ES8311_REG0B, 0x00);
+    writeReg(ES8311_REG0C, 0x00);
+    writeReg(ES8311_REG10, 0x1F);
+    writeReg(ES8311_REG11, 0x7F);
+    writeReg(ES8311_REG00, 0x80);  // Reset
     delay(10);
 
-    // Verify communication by reading chip ID
-    uint8_t chipId = readReg(ES8311_REG0D);
-    Serial.printf("[ES8311] Chip ID: 0x%02X\n", chipId);
+    // Set to slave mode (ESP32 is I2S master)
+    writeReg(ES8311_REG00, 0xBF);  // Bit 6 = 0 for slave mode
+    delay(10);
 
-    // Configure clocks
-    Serial.println("[ES8311] Configuring clocks...");
+    // Clock source from MCLK
+    writeReg(ES8311_REG01, 0x3F);
+    writeReg(ES8311_REG01, 0x3F);  // Confirm MCLK source
+
+    // Configure sample rate
     configureClocks(sample_rate);
 
-    // Power up analog blocks
-    Serial.println("[ES8311] Powering up analog blocks...");
-    writeReg(ES8311_REG0D, 0x01);  // Power up analog
-    writeReg(ES8311_REG0E, 0x02);  // Enable analog PGA
-    writeReg(ES8311_REG12, 0x00);  // Enable ALC
-    writeReg(ES8311_REG13, 0x10);  // ALC settings
-    delay(10);
+    // System settings
+    writeReg(ES8311_REG13, 0x10);
+    writeReg(ES8311_REG1B, 0x0A);
+    writeReg(ES8311_REG1C, 0x6A);
 
-    // Configure ADC (microphone)
-    Serial.println("[ES8311] Configuring ADC...");
+    // Configure ADC and DAC
+    Serial.println("[ES8311] Configuring ADC and DAC...");
     configureADC();
-
-    // Configure DAC (speaker)
-    Serial.println("[ES8311] Configuring DAC...");
     configureDAC();
 
+    // ESP-ADF start sequence - enable ADC/DAC modules
+    Serial.println("[ES8311] Starting ADC/DAC modules...");
+    writeReg(ES8311_REG37, 0x08);  // DAC control
+    writeReg(ES8311_REG45, 0x00);  // GPIO control
+    writeReg(ES8311_REG44, 0x58);  // Set internal reference signal (ADCL + DACR)
+
     // Set default gain and volume
-    setMicGain(GAIN_24DB);      // 24dB microphone gain
+    setMicGain(GAIN_24DB);      // 24dB microphone gain (higher values break audio)
     setVolume(70);              // 70% speaker volume
     muteMic(false);             // Unmute microphone
     muteDAC(false);             // Unmute speaker
@@ -102,12 +120,12 @@ void ES8311::configureADC() {
     writeReg(ES8311_REG14, 0x1A);  // Microphone bias and DMIC config
 
     // ADC path configuration
-    writeReg(ES8311_REG16, 0x24);  // ADC scale (gain)
+    writeReg(ES8311_REG16, 0x24);  // ADC scale (stable value)
     writeReg(ES8311_REG17, 0xBF);  // ADC enable/channel config
     writeReg(ES8311_REG15, 0x40);  // ADC mute control (unmuted)
 
-    // ALC (Automatic Level Control) - optional
-    writeReg(ES8311_REG10, 0x00);  // ALC disabled for now
+    // ALC (Automatic Level Control) - disabled (enabling breaks audio)
+    writeReg(ES8311_REG10, 0x00);  // ALC disabled
     writeReg(ES8311_REG11, 0x00);  // ALC max gain
     writeReg(ES8311_REG13, 0x00);  // ALC control
 
@@ -115,8 +133,8 @@ void ES8311::configureADC() {
     writeReg(ES8311_REG44, 0x08);  // Internal reference: normal
 
     // I2S format for ADC
-    writeReg(ES8311_REG09, 0x00);  // ADC I2S format: standard I2S, 16-bit
-    writeReg(ES8311_REG0A, 0x00);  // ADC I2S mode
+    writeReg(ES8311_REG09, 0x0C);  // ADC I2S format: standard I2S, 16-bit (bits[3:2]=11 for data width)
+    writeReg(ES8311_REG0A, 0x0C);  // ADC I2S mode: standard I2S, 16-bit
 }
 
 void ES8311::configureDAC() {

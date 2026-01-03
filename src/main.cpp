@@ -21,6 +21,8 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <FS.h>
+#include <SPIFFS.h>
 #include "config.h"
 
 // Phase 2 Components
@@ -157,6 +159,15 @@ void setup() {
     // Print system information
     printSystemInfo();
 
+    // Initialize SPIFFS for audio recording/debugging
+    Serial.println("[SETUP] Initializing SPIFFS...");
+    if (!SPIFFS.begin(true)) {  // true = format on failure
+        Serial.println("[SETUP] ✗ SPIFFS initialization failed");
+    } else {
+        Serial.printf("[SETUP] ✓ SPIFFS initialized (%d bytes total, %d bytes used)\n",
+                      SPIFFS.totalBytes(), SPIFFS.usedBytes());
+    }
+
     // Initialize device manager (handles NVS storage)
     Serial.println("[SETUP] Initializing device manager...");
     setupDeviceManager();
@@ -212,6 +223,96 @@ void setup() {
 void loop() {
     // Main loop is kept minimal since most work happens in FreeRTOS tasks
     // This can be used for low-priority background tasks
+
+    // Serial commands for debugging
+    if (Serial.available()) {
+        char cmd = Serial.read();
+
+        if (cmd == 'r' && audioPipeline) {
+            // Record: Save current wake word buffer to SPIFFS
+            WakeWord* ww = audioPipeline->getWakeWord();
+            if (ww) {
+                Serial.println("\n[CMD] Saving wake word buffer to /recording.wav...");
+                if (ww->saveBufferToWAV("/recording.wav")) {
+                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download or 'p' to play");
+                } else {
+                    Serial.println("[CMD] ✗ Failed to save recording");
+                }
+            }
+        }
+        else if (cmd == 'd') {
+            // Download: Send WAV file over serial
+            // Pause wake word detection to prevent debug output from corrupting binary data
+            WakeWord* ww = audioPipeline ? audioPipeline->getWakeWord() : nullptr;
+            bool wasEnabled = false;
+            if (ww && ww->isEnabled()) {
+                wasEnabled = true;
+                ww->enable(false);
+                delay(100);  // Let any in-flight processing finish
+            }
+
+            File file = SPIFFS.open("/recording.wav", FILE_READ);
+            if (file) {
+                size_t fileSize = file.size();
+                Serial.println("\n[CMD] Downloading /recording.wav...");
+                Serial.printf("[CMD] File size: %d bytes\n", fileSize);
+                Serial.println("--- BEGIN WAV FILE ---");
+                Serial.flush();  // Ensure text is sent before binary data
+
+                // Send binary data
+                while (file.available()) {
+                    Serial.write(file.read());
+                }
+
+                Serial.flush();  // Ensure all binary data is sent
+                Serial.println("\n--- END WAV FILE ---");
+                file.close();
+                Serial.printf("[CMD] ✓ Sent %d bytes\n", fileSize);
+            } else {
+                Serial.println("[CMD] ✗ No recording found. Press 'r' first");
+            }
+
+            // Resume wake word detection
+            if (ww && wasEnabled) {
+                ww->enable(true);
+            }
+        }
+        else if (cmd == 'p' && audioPipeline) {
+            // Play: Play recording on speaker
+            Serial.println("\n[CMD] Playing /recording.wav on speaker...");
+            File file = SPIFFS.open("/recording.wav", FILE_READ);
+            if (file) {
+                // Skip WAV header (44 bytes)
+                file.seek(44);
+
+                I2SManager* i2s = audioPipeline->getI2S();
+                if (i2s) {
+                    int16_t buffer[320];
+                    while (file.available()) {
+                        size_t bytesRead = file.read((uint8_t*)buffer, sizeof(buffer));
+                        size_t samplesRead = bytesRead / 2;
+                        i2s->writeSpeaker(buffer, samplesRead);
+                        delay(20);  // 20ms per frame
+                    }
+                    Serial.println("[CMD] ✓ Playback complete");
+                } else {
+                    Serial.println("[CMD] ✗ Speaker not available");
+                }
+                file.close();
+            } else {
+                Serial.println("[CMD] ✗ No recording found. Press 'r' first");
+            }
+        }
+        else if (cmd == 'h') {
+            // Help
+            Serial.println("\n=== Audio Debug Commands ===");
+            Serial.println("r - Record current wake word buffer to /recording.wav");
+            Serial.println("d - Download recording over serial (save to file on PC)");
+            Serial.println("p - Play recording on device speaker");
+            Serial.println("h - Show this help");
+            Serial.println("===========================\n");
+        }
+    }
 
 #ifndef DISABLE_AUDIO_TEMP
     // Process call manager (check timeouts, state transitions)

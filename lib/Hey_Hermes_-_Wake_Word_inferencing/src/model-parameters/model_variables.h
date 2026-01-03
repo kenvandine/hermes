@@ -61,7 +61,7 @@ ei_dsp_config_mfe_t ei_dsp_config_866715_3 = {
     40, // int num_filters
     256, // int fft_length
     0, // int low_frequency
-    0, // int high_frequency
+    8000, // int high_frequency
     101, // int win_size
     -52 // int noise_floor_db
 };
@@ -145,7 +145,7 @@ const ei_impulse_t impulse_866715_1 = {
     .project_name = "Hey Hermes - Wake Word",
     .impulse_id = 1,
     .impulse_name = "Impulse #1",
-    .deploy_version = 2,
+    .deploy_version = 6,
 
     .nn_input_frame_size = 3960,
     .raw_sample_count = 16000,

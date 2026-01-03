@@ -43,12 +43,12 @@ bool I2SManager::beginMicrophone(uint32_t sampleRate, i2s_bits_per_sample_t bits
     }
 
     Serial.printf("[I2S] Initializing microphone on I2S%d @ %d Hz\n", micPort, sampleRate);
-    Serial.println("[I2S] Using PDM mode for digital microphone");
+    Serial.println("[I2S] Using full-duplex I2S mode (ES8311 ADC+DAC)");
 
-    // PDM mode configuration for digital PDM microphone
-    // The microphone is NOT connected to ES8311 ADC, it's a separate PDM mic
+    // Full-duplex I2S configuration for ES8311 (both ADC and DAC on same I2S bus)
+    // The ES8311 has one I2S interface that handles both microphone ADC output and speaker DAC input
     i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM),
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX),  // Full-duplex
         .sample_rate = sampleRate,
         .bits_per_sample = bitsPerSample,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
@@ -56,18 +56,18 @@ bool I2SManager::beginMicrophone(uint32_t sampleRate, i2s_bits_per_sample_t bits
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = I2S_DMA_BUF_COUNT,
         .dma_buf_len = I2S_DMA_BUF_LEN,
-        .use_apll = false,
-        .tx_desc_auto_clear = false,
-        .fixed_mclk = 0  // PDM doesn't use MCLK
+        .use_apll = true,   // Use APLL for better clock accuracy
+        .tx_desc_auto_clear = true,  // Clear TX buffer automatically
+        .fixed_mclk = 0  // Let APLL calculate MCLK
     };
 
-    // PDM pin configuration: only CLK (WS) and DATA (SD) are used
+    // Full-duplex I2S pin configuration with both data_in and data_out
     i2s_pin_config_t pin_config = {
-        .mck_io_num = I2S_PIN_NO_CHANGE,  // PDM doesn't use MCLK
-        .bck_io_num = I2S_PIN_NO_CHANGE,  // PDM doesn't use BCLK
-        .ws_io_num = I2S_MIC_WS_PIN,      // PDM CLK (GPIO 45)
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = I2S_MIC_SD_PIN     // PDM DATA (GPIO 10)
+        .mck_io_num = I2S_MIC_MCLK_PIN,   // MCLK on GPIO 42 for ES8311
+        .bck_io_num = I2S_MIC_SCK_PIN,    // BCLK on GPIO 9
+        .ws_io_num = I2S_MIC_WS_PIN,      // LRCLK on GPIO 45
+        .data_out_num = I2S_SPK_SD_PIN,   // Data OUT on GPIO 8 (to ES8311 DAC)
+        .data_in_num = I2S_MIC_SD_PIN     // Data IN on GPIO 10 (from ES8311 ADC)
     };
 
     esp_err_t err = i2s_driver_install(micPort, &i2s_config, 0, NULL);
@@ -89,7 +89,7 @@ bool I2SManager::beginMicrophone(uint32_t sampleRate, i2s_bits_per_sample_t bits
     micSampleRate = sampleRate;
     micReady = true;
 
-    Serial.println("[I2S] Microphone initialized successfully in PDM mode");
+    Serial.println("[I2S] Microphone initialized successfully (ES8311 ADC)");
     return true;
 }
 
@@ -101,8 +101,16 @@ bool I2SManager::beginSpeaker(uint32_t sampleRate, i2s_bits_per_sample_t bitsPer
 
     Serial.printf("[I2S] Initializing speaker on I2S%d @ %d Hz\n", speakerPort, sampleRate);
 
-    // Speaker I2S configuration for ES8311 DAC
-    // ES8311 requires MCLK signal for proper operation
+    // Check if speaker and mic share the same I2S port (full-duplex ES8311)
+    if (speakerPort == micPort && micReady) {
+        Serial.println("[I2S] Speaker uses same I2S port as microphone (full-duplex mode)");
+        Serial.println("[I2S] ✓ Speaker already initialized in full-duplex mode");
+        speakerSampleRate = sampleRate;
+        speakerReady = true;
+        return true;
+    }
+
+    // Separate I2S port for speaker (legacy configuration)
     i2s_config_t i2s_config = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
         .sample_rate = sampleRate,
@@ -114,11 +122,11 @@ bool I2SManager::beginSpeaker(uint32_t sampleRate, i2s_bits_per_sample_t bitsPer
         .dma_buf_len = I2S_DMA_BUF_LEN,
         .use_apll = false,
         .tx_desc_auto_clear = true,
-        .fixed_mclk = sampleRate * 256  // MCLK = 256 * sample_rate (e.g., 4.096 MHz for 16kHz)
+        .fixed_mclk = sampleRate * 256
     };
 
     i2s_pin_config_t pin_config = {
-        .mck_io_num = I2S_SPK_MCLK_PIN,   // MCLK on GPIO 42 for ES8311
+        .mck_io_num = I2S_SPK_MCLK_PIN,
         .bck_io_num = I2S_SPK_SCK_PIN,
         .ws_io_num = I2S_SPK_WS_PIN,
         .data_out_num = I2S_SPK_SD_PIN,
