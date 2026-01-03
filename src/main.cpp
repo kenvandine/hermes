@@ -273,6 +273,8 @@ void loop() {
                 uint32_t dataSize = debugBufferIndex * sizeof(int16_t);
                 uint32_t riffSize = dataSize + 36;
 
+                Serial.println("--- BEGIN WAV FILE ---");
+
                 // RIFF header
                 Serial.write("RIFF", 4);
                 Serial.write((uint8_t*)&riffSize, 4);
@@ -296,7 +298,9 @@ void loop() {
 
                 // Audio data
                 Serial.write((uint8_t*)debugAudioBuffer, dataSize);
+
                 Serial.println(); // Newline at the end
+                Serial.println("--- END WAV FILE ---");
                 Serial.println("Download complete.");
             } else {
                 Serial.println("Buffer empty or not allocated.");
