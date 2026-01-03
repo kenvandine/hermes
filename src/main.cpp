@@ -93,6 +93,12 @@ TaskHandle_t audioTaskHandle = NULL;
 #endif
 TaskHandle_t mqttTaskHandle = NULL;
 
+// Audio recording buffer for debugging
+int16_t* debugAudioBuffer = nullptr;
+const size_t DEBUG_BUFFER_SIZE = 16000 * 5; // 5 seconds at 16kHz
+size_t debugBufferIndex = 0;
+bool isRecording = false;
+
 // ============================================================================
 // FORWARD DECLARATIONS
 // ============================================================================
@@ -231,6 +237,70 @@ void loop() {
         if (millis() - lastRegistryCheck > 10000) {  // Every 10 seconds
             lastRegistryCheck = millis();
             deviceRegistry->checkTimeouts();
+        }
+    }
+
+    // Handle debug recording commands
+    if (Serial.available()) {
+        char c = Serial.read();
+        if (c == 'r') {
+            if (!debugAudioBuffer) {
+                debugAudioBuffer = (int16_t*)ps_malloc(DEBUG_BUFFER_SIZE * sizeof(int16_t));
+                if (!debugAudioBuffer) {
+                    debugAudioBuffer = (int16_t*)malloc(DEBUG_BUFFER_SIZE * sizeof(int16_t));
+                }
+            }
+
+            if (debugAudioBuffer) {
+                debugBufferIndex = 0;
+                isRecording = true;
+                Serial.println("Recording started (5s buffer)...");
+            } else {
+                Serial.println("Failed to allocate recording buffer!");
+            }
+        } else if (c == 'd') {
+            isRecording = false;
+            Serial.println("Recording stopped.");
+            if (debugAudioBuffer && debugBufferIndex > 0) {
+                Serial.printf("Downloading %d samples...\n", debugBufferIndex);
+
+                // Print WAV header
+                uint32_t sampleRate = 16000;
+                uint32_t channels = 1;
+                uint32_t bitsPerSample = 16;
+                uint32_t byteRate = sampleRate * channels * bitsPerSample / 8;
+                uint32_t blockAlign = channels * bitsPerSample / 8;
+                uint32_t dataSize = debugBufferIndex * sizeof(int16_t);
+                uint32_t riffSize = dataSize + 36;
+
+                // RIFF header
+                Serial.write("RIFF", 4);
+                Serial.write((uint8_t*)&riffSize, 4);
+                Serial.write("WAVE", 4);
+
+                // fmt chunk
+                Serial.write("fmt ", 4);
+                uint32_t fmtSize = 16;
+                Serial.write((uint8_t*)&fmtSize, 4);
+                uint16_t audioFormat = 1; // PCM
+                Serial.write((uint8_t*)&audioFormat, 2);
+                Serial.write((uint8_t*)&channels, 2);
+                Serial.write((uint8_t*)&sampleRate, 4);
+                Serial.write((uint8_t*)&byteRate, 4);
+                Serial.write((uint8_t*)&blockAlign, 2);
+                Serial.write((uint8_t*)&bitsPerSample, 2);
+
+                // data chunk
+                Serial.write("data", 4);
+                Serial.write((uint8_t*)&dataSize, 4);
+
+                // Audio data
+                Serial.write((uint8_t*)debugAudioBuffer, dataSize);
+                Serial.println(); // Newline at the end
+                Serial.println("Download complete.");
+            } else {
+                Serial.println("Buffer empty or not allocated.");
+            }
         }
     }
 
@@ -761,6 +831,27 @@ void audioTask(void* parameter) {
         // Process audio pipeline (handles all audio I/O, encoding, decoding)
         // This includes wake word detection when in IDLE mode
         audioPipeline->process();
+
+        // Debug recording
+        if (isRecording && debugAudioBuffer) {
+            int16_t* currentFrame = audioPipeline->getMicFrame();
+            size_t frameSize = audioPipeline->getFrameSize();
+
+            if (currentFrame && frameSize > 0) {
+                // Copy frame to debug buffer
+                size_t samplesToCopy = frameSize;
+                if (debugBufferIndex + samplesToCopy > DEBUG_BUFFER_SIZE) {
+                    samplesToCopy = DEBUG_BUFFER_SIZE - debugBufferIndex;
+                    isRecording = false; // Buffer full
+                    Serial.println("Recording stopped (buffer full).");
+                }
+
+                if (samplesToCopy > 0) {
+                    memcpy(debugAudioBuffer + debugBufferIndex, currentFrame, samplesToCopy * sizeof(int16_t));
+                    debugBufferIndex += samplesToCopy;
+                }
+            }
+        }
 
         // Phase 6: Process speech recognition when in LISTENING state
         if (stateMachine && stateMachine->getState() == AppState::LISTENING) {
