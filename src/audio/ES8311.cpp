@@ -48,7 +48,7 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     configureDAC();
 
     // Set default gain and volume
-    setMicGain(GAIN_24DB);      // 24dB microphone gain
+    setMicGain(GAIN_36DB);      // 36dB microphone gain
     setVolume(70);              // 70% speaker volume
     muteMic(false);             // Unmute microphone
     muteDAC(false);             // Unmute speaker
