@@ -51,7 +51,9 @@
 #define ES8311_REG1C        0x1C  // DAC control
 #define ES8311_REG31        0x31  // DAC volume
 #define ES8311_REG32        0x32  // DAC volume
+#define ES8311_REG37        0x37  // DAC control
 #define ES8311_REG44        0x44  // GPIO control
+#define ES8311_REG45        0x45  // GPIO control
 
 // Audio input/output modes
 enum ES8311_MicGain {

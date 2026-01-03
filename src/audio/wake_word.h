@@ -90,6 +90,20 @@ public:
      */
     bool isEnabled() const;
 
+    /**
+     * Save current rolling buffer to SPIFFS as WAV file for debugging
+     * @param filename Path to save WAV file (e.g. "/recording.wav")
+     * @return true if successful
+     */
+    bool saveBufferToWAV(const char* filename);
+
+    /**
+     * Get pointer to rolling buffer for debugging
+     * @param size Output parameter for buffer size
+     * @return Pointer to buffer (or nullptr if not initialized)
+     */
+    const int16_t* getBuffer(size_t* size) const;
+
 private:
     bool initialized;
     bool enabled;
@@ -107,6 +121,11 @@ private:
     // Temporary buffer for sample conversion
     float* sampleBuffer;
     size_t sampleBufferSize;
+
+    // Rolling buffer for accumulating audio samples
+    int16_t* rollingBuffer;
+    size_t rollingBufferSize;
+    size_t rollingBufferPos;
 
     // Process inference and check for wake word
     bool runInference(const int16_t* samples, size_t sampleCount);

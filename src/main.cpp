@@ -21,6 +21,8 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <FS.h>
+#include <SPIFFS.h>
 #include "config.h"
 
 // Phase 2 Components
@@ -163,6 +165,15 @@ void setup() {
     // Print system information
     printSystemInfo();
 
+    // Initialize SPIFFS for audio recording/debugging
+    Serial.println("[SETUP] Initializing SPIFFS...");
+    if (!SPIFFS.begin(true)) {  // true = format on failure
+        Serial.println("[SETUP] ✗ SPIFFS initialization failed");
+    } else {
+        Serial.printf("[SETUP] ✓ SPIFFS initialized (%d bytes total, %d bytes used)\n",
+                      SPIFFS.totalBytes(), SPIFFS.usedBytes());
+    }
+
     // Initialize device manager (handles NVS storage)
     Serial.println("[SETUP] Initializing device manager...");
     setupDeviceManager();
@@ -219,6 +230,7 @@ void loop() {
     // Main loop is kept minimal since most work happens in FreeRTOS tasks
     // This can be used for low-priority background tasks
 
+
 #ifndef DISABLE_AUDIO_TEMP
     // Process call manager (check timeouts, state transitions)
     if (callManager) {
@@ -254,7 +266,7 @@ void loop() {
             if (debugAudioBuffer) {
                 debugBufferIndex = 0;
                 isRecording = true;
-                Serial.println("Recording started (5s buffer)...");
+                Serial.println("Recording started (3s buffer)...");
             } else {
                 Serial.println("Failed to allocate recording buffer!");
             }

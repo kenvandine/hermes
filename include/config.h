@@ -8,7 +8,7 @@
 // I2S Audio Pins - Waveshare ESP32-S3-Touch-AMOLED-1.8"
 // ES8311 codec with built-in microphone and speaker
 // Based on ESPHome config for ESP32-S3-Touch-AMOLED-1.75 (same pinout)
-#define I2S_MIC_NUM             I2S_NUM_0
+#define I2S_MIC_NUM             I2S_NUM_1  // ES8311 uses same I2S bus for both ADC and DAC
 #define I2S_MIC_SCK_PIN         9     // Bit Clock (BCLK) - shared
 #define I2S_MIC_WS_PIN          45    // Word Select (LRCLK) - shared
 #define I2S_MIC_SD_PIN          10    // Serial Data IN (DIN) - microphone
@@ -147,10 +147,17 @@
 // WAKE WORD & VOICE COMMAND CONFIGURATION
 // ============================================================================
 
+// Edge Impulse Memory Configuration
+// Must be defined BEFORE any Edge Impulse includes
+#define EI_CLASSIFIER_ALLOCATION_STATIC  1       // Use static allocation
+#define EI_MAX_OVERFLOW_BUFFER_COUNT     500     // Allow many overflow buffers (model needs lots!)
+#define EI_TENSOR_ARENA_LOCATION         .ext_ram.bss  // Place tensor arena in PSRAM
+
 // Wake word detection
 #define WAKE_WORD_ENABLED       true   // Edge Impulse model integrated
-#define WAKE_WORD_THRESHOLD     0.8    // 0.0 - 1.0, higher = stricter
+#define WAKE_WORD_THRESHOLD     0.35   // 0.0 - 1.0, VERY LOW for testing (raised back up after confirming detection)
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
+#define DEBUG_WAKE_WORD         1      // Enable verbose wake word logging
 
 // Voice command recognition
 #define VOICE_COMMANDS_ENABLED  false  // Set true when keyword spotting model ready

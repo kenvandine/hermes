@@ -254,9 +254,18 @@ void UIManager::touchReadCallback(lv_indev_drv_t* drv, lv_indev_data_t* data) {
     if (fingers > 0) {
         int32_t x = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
         int32_t y = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
-        data->point.x = x;
-        data->point.y = y;
-        data->state = LV_INDEV_STATE_PRESSED;
+
+        // FT3168 returns 12-bit coordinates (0-4095), scale to display resolution
+        // Touch panel native range: 0-4095
+        // Display resolution: 368x448
+        if (x >= 0 && x <= 4095 && y >= 0 && y <= 4095) {
+            data->point.x = (x * DISPLAY_WIDTH) / 4096;
+            data->point.y = (y * DISPLAY_HEIGHT) / 4096;
+            data->state = LV_INDEV_STATE_PRESSED;
+        } else {
+            // Invalid coordinates, treat as released
+            data->state = LV_INDEV_STATE_RELEASED;
+        }
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
