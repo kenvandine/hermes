@@ -296,8 +296,20 @@ void loop() {
                 Serial.write("data", 4);
                 Serial.write((uint8_t*)&dataSize, 4);
 
-                // Audio data
-                Serial.write((uint8_t*)debugAudioBuffer, dataSize);
+                // Audio data - send in chunks to avoid watchdog timeout
+                uint8_t* bytePtr = (uint8_t*)debugAudioBuffer;
+                size_t remaining = dataSize;
+                const size_t CHUNK_SIZE = 512;
+
+                while (remaining > 0) {
+                    size_t toWrite = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
+                    Serial.write(bytePtr, toWrite);
+                    bytePtr += toWrite;
+                    remaining -= toWrite;
+
+                    // Feed watchdog / allow background tasks
+                    yield();
+                }
 
                 Serial.println(); // Newline at the end
                 Serial.println("--- END WAV FILE ---");
