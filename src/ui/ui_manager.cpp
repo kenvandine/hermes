@@ -399,6 +399,19 @@ void UIManager::setVolume(uint8_t volume) {
 }
 #endif
 
+#ifndef DISABLE_AUDIO_TEMP
+void UIManager::setMicGain(uint8_t gainStep) {
+    if (audioPipeline) {
+        audioPipeline->setMicGain(gainStep);
+        Serial.printf("[UI] Microphone gain set to %ddB\n", gainStep * 6);
+    }
+}
+#else
+void UIManager::setMicGain(uint8_t gainStep) {
+    // No-op when audio is disabled
+}
+#endif
+
 void UIManager::showError(const String& message) {
     if (!screenError) return;
 

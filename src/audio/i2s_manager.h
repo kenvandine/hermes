@@ -108,6 +108,11 @@ public:
      */
     uint32_t getSpeakerSampleRate() const;
 
+    /**
+     * Set microphone gain (0=0dB, 1=6dB, ... 6=36dB, 7=42dB)
+     */
+    void setMicGain(uint8_t gainStep);
+
 private:
     ES8311 codec;  // Audio codec for built-in mic/speaker
 

@@ -260,6 +260,12 @@ void AudioPipeline::setVolume(uint8_t volume) {
     }
 }
 
+void AudioPipeline::setMicGain(uint8_t gainStep) {
+    if (i2s) {
+        i2s->setMicGain(gainStep);
+    }
+}
+
 void AudioPipeline::mute(bool enabled) {
     if (i2s) {
         i2s->mute(enabled);

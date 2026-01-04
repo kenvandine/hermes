@@ -10,11 +10,11 @@
  * ┌──────────────────────┐
  * │   Settings           │ ← Header
  * ├──────────────────────┤
- * │  Room Name:          │
- * │  [Kitchen      ]     │ ← Text input
- * │                      │
  * │  Volume:        80%  │
  * │  [=========---]      │ ← Slider
+ * │                      │
+ * │  Mic Gain:      36dB │
+ * │  [===========-]      │ ← Slider (0-36dB)
  * │                      │
  * │  Brightness:    70%  │
  * │  [========----]      │ ← Slider
@@ -29,8 +29,10 @@
 namespace ScreenSettings {
 
 static lv_obj_t* sliderVolume = nullptr;
+static lv_obj_t* sliderMicGain = nullptr;
 static lv_obj_t* sliderBrightness = nullptr;
 static lv_obj_t* lblVolumeValue = nullptr;
+static lv_obj_t* lblMicGainValue = nullptr;
 static lv_obj_t* lblBrightnessValue = nullptr;
 
 static void btnBackCallback(lv_event_t* e) {
@@ -51,6 +53,20 @@ static void sliderVolumeCallback(lv_event_t* e) {
     UIManager* ui = (UIManager*)lv_event_get_user_data(e);
     if (ui) {
         ui->setVolume(value);
+    }
+}
+
+static void sliderMicGainCallback(lv_event_t* e) {
+    int value = lv_slider_get_value(sliderMicGain);
+    if (lblMicGainValue) {
+        char text[8];
+        snprintf(text, sizeof(text), "%ddB", value * 6);
+        lv_label_set_text(lblMicGainValue, text);
+    }
+    // Update microphone gain
+    UIManager* ui = (UIManager*)lv_event_get_user_data(e);
+    if (ui) {
+        ui->setMicGain(value);
     }
 }
 
@@ -105,7 +121,29 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_set_pos(sliderVolume, UI_MARGIN, y);
     lv_slider_set_range(sliderVolume, 0, 100);
     lv_slider_set_value(sliderVolume, 80, LV_ANIM_OFF);
-    lv_obj_add_event_cb(sliderVolume, sliderVolumeCallback, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(sliderVolume, sliderVolumeCallback, LV_EVENT_VALUE_CHANGED, uiManager);
+
+    y += 40;
+
+    // Microphone Gain control
+    lv_obj_t* lblMicGain = lv_label_create(screen);
+    lv_label_set_text(lblMicGain, "Mic Gain:");
+    lv_obj_set_style_text_font(lblMicGain, &lv_font_montserrat_18, 0);
+    lv_obj_set_pos(lblMicGain, UI_MARGIN, y);
+
+    lblMicGainValue = lv_label_create(screen);
+    lv_label_set_text(lblMicGainValue, "36dB");  // Default to 36dB (step 6)
+    lv_obj_set_style_text_font(lblMicGainValue, &lv_font_montserrat_18, 0);
+    lv_obj_align(lblMicGainValue, LV_ALIGN_TOP_RIGHT, -UI_MARGIN, y);
+
+    y += 30;
+
+    sliderMicGain = lv_slider_create(screen);
+    lv_obj_set_size(sliderMicGain, DISPLAY_WIDTH - 2 * UI_MARGIN, 10);
+    lv_obj_set_pos(sliderMicGain, UI_MARGIN, y);
+    lv_slider_set_range(sliderMicGain, 0, 6);  // 0=0dB to 6=36dB in 6dB steps
+    lv_slider_set_value(sliderMicGain, 6, LV_ANIM_OFF);  // Default to 36dB
+    lv_obj_add_event_cb(sliderMicGain, sliderMicGainCallback, LV_EVENT_VALUE_CHANGED, uiManager);
 
     y += 40;
 
@@ -127,7 +165,7 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_set_pos(sliderBrightness, UI_MARGIN, y);
     lv_slider_set_range(sliderBrightness, 10, 100);
     lv_slider_set_value(sliderBrightness, 70, LV_ANIM_OFF);
-    lv_obj_add_event_cb(sliderBrightness, sliderBrightnessCallback, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(sliderBrightness, sliderBrightnessCallback, LV_EVENT_VALUE_CHANGED, uiManager);
 
     y += 40;
 
