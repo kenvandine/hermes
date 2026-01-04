@@ -108,12 +108,12 @@ bool OllamaClient::testConnection() {
     Serial.println("[OllamaClient] Testing connection...");
 
     String responseJson;
-    if (!httpPost("/api/tags", "{}", responseJson)) {
+    if (!httpGet("/api/tags", responseJson)) {
         Serial.println("[OllamaClient] Connection test failed");
         return false;
     }
 
-    Serial.println("[OllamaClient] Connection test successful");
+    Serial.println("[OllamaClient] ✓ Connection test successful");
     return true;
 }
 
@@ -191,6 +191,26 @@ bool OllamaClient::httpPost(const String& endpoint, const String& payload, Strin
     http.addHeader("Content-Type", "application/json");
 
     int httpCode = http.POST(payload);
+
+    if (httpCode != HTTP_CODE_OK && httpCode != 200) {
+        Serial.printf("[OllamaClient] HTTP error: %d\n", httpCode);
+        http.end();
+        return false;
+    }
+
+    response = http.getString();
+    http.end();
+
+    return true;
+}
+
+bool OllamaClient::httpGet(const String& endpoint, String& response) {
+    String url = serverUrl + ":" + String(serverPort) + endpoint;
+
+    http.begin(url);
+    http.setTimeout(timeout);
+
+    int httpCode = http.GET();
 
     if (httpCode != HTTP_CODE_OK && httpCode != 200) {
         Serial.printf("[OllamaClient] HTTP error: %d\n", httpCode);

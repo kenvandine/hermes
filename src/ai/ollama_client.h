@@ -79,8 +79,9 @@ private:
     // Parse JSON response from Ollama
     bool parseResponse(const String& jsonResponse, Response& response);
 
-    // HTTP POST helper
+    // HTTP helpers
     bool httpPost(const String& endpoint, const String& payload, String& response);
+    bool httpGet(const String& endpoint, String& response);
 };
 
 #endif // OLLAMA_CLIENT_H
