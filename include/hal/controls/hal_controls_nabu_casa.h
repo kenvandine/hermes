@@ -2,19 +2,20 @@
 #define HAL_CONTROLS_NABU_CASA_H
 
 #include "hal/hal_controls.h"
+#include <OneButton.h>
 
 /**
- * Nabu Casa Controls HAL Implementation (STUB)
+ * Nabu Casa Controls HAL Implementation
  *
- * TODO: Implement for physical controls:
- * - Action button (with debouncing, press/long-press detection)
- * - Rotary encoder (for volume control)
- * - Hardware mute switch
+ * Implements physical controls for Nabu Casa Voice PE:
+ * - Action button (OneButton library for debouncing/gestures)
+ * - Rotary encoder (volume control with interrupts)
+ * - Hardware mute switch (digital input with pullup)
  */
 class HALControlsNabuCasa : public HALControls {
 public:
     HALControlsNabuCasa();
-    virtual ~HALControlsNabuCasa() = default;
+    virtual ~HALControlsNabuCasa();
 
     // HALControls interface implementation
     bool begin() override;
@@ -29,12 +30,37 @@ public:
 private:
     ControlCallback callback_;
     bool enabled_;
-    int volumeLevel_;
-    bool muteState_;
 
-    // Debouncing state
-    unsigned long lastButtonPress_;
-    unsigned long lastRotaryChange_;
+    // Volume tracking
+    volatile int volumeLevel_;       // Current volume (0-100)
+    volatile int encoderPosition_;   // Raw encoder position
+
+    // Mute state
+    volatile bool muteState_;
+    bool lastMuteState_;
+
+    // OneButton for action button
+    OneButton* actionButton_;
+
+    // Rotary encoder state
+    volatile uint8_t lastEncoded_;
+
+    // Button callbacks (static for OneButton)
+    static void onButtonClick();
+    static void onButtonLongPress();
+    static void onButtonDoubleClick();
+
+    // Interrupt handlers (static for attachInterrupt)
+    static void IRAM_ATTR handleRotaryA();
+    static void IRAM_ATTR handleRotaryB();
+    static void IRAM_ATTR handleMuteSwitch();
+
+    // Instance pointer for static callbacks
+    static HALControlsNabuCasa* instance_;
+
+    // Helper methods
+    void updateEncoder();
+    void checkMuteSwitch();
 };
 
 #endif // HAL_CONTROLS_NABU_CASA_H
