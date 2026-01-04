@@ -119,17 +119,6 @@ public:
      * Get components (for advanced use)
      */
     I2SManager* getI2S() { return i2s; }
-
-    /**
-     * Get the latest microphone frame buffer
-     * @return Pointer to internal frame buffer
-     */
-    int16_t* getMicFrame() { return micFrame; }
-
-    /**
-     * Get frame size in samples
-     */
-    int getFrameSize() const { return frameSize; }
     OpusCodec* getCodec() { return codec; }
     UdpAudio* getUdp() { return udp; }
     WakeWord* getWakeWord() { return wakeWord; }

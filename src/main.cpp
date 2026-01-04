@@ -95,12 +95,6 @@ TaskHandle_t audioTaskHandle = NULL;
 #endif
 TaskHandle_t mqttTaskHandle = NULL;
 
-// Audio recording buffer for debugging
-int16_t* debugAudioBuffer = nullptr;
-const size_t DEBUG_BUFFER_SIZE = 16000 * 3; // 3 seconds at 16kHz (reduced to avoid download timeout)
-size_t debugBufferIndex = 0;
-bool isRecording = false;
-
 // ============================================================================
 // FORWARD DECLARATIONS
 // ============================================================================
@@ -230,6 +224,95 @@ void loop() {
     // Main loop is kept minimal since most work happens in FreeRTOS tasks
     // This can be used for low-priority background tasks
 
+    // Serial commands for debugging
+    if (Serial.available()) {
+        char cmd = Serial.read();
+
+        if (cmd == 'r' && audioPipeline) {
+            // Record: Save current wake word buffer to SPIFFS
+            WakeWord* ww = audioPipeline->getWakeWord();
+            if (ww) {
+                Serial.println("\n[CMD] Saving wake word buffer to /recording.wav...");
+                if (ww->saveBufferToWAV("/recording.wav")) {
+                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download or 'p' to play");
+                } else {
+                    Serial.println("[CMD] ✗ Failed to save recording");
+                }
+            }
+        }
+        else if (cmd == 'd') {
+            // Download: Send WAV file over serial
+            // Pause wake word detection to prevent debug output from corrupting binary data
+            WakeWord* ww = audioPipeline ? audioPipeline->getWakeWord() : nullptr;
+            bool wasEnabled = false;
+            if (ww && ww->isEnabled()) {
+                wasEnabled = true;
+                ww->enable(false);
+                delay(100);  // Let any in-flight processing finish
+            }
+
+            File file = SPIFFS.open("/recording.wav", FILE_READ);
+            if (file) {
+                size_t fileSize = file.size();
+                Serial.println("\n[CMD] Downloading /recording.wav...");
+                Serial.printf("[CMD] File size: %d bytes\n", fileSize);
+                Serial.println("--- BEGIN WAV FILE ---");
+                Serial.flush();  // Ensure text is sent before binary data
+
+                // Send binary data
+                while (file.available()) {
+                    Serial.write(file.read());
+                }
+
+                Serial.flush();  // Ensure all binary data is sent
+                Serial.println("\n--- END WAV FILE ---");
+                file.close();
+                Serial.printf("[CMD] ✓ Sent %d bytes\n", fileSize);
+            } else {
+                Serial.println("[CMD] ✗ No recording found. Press 'r' first");
+            }
+
+            // Resume wake word detection
+            if (ww && wasEnabled) {
+                ww->enable(true);
+            }
+        }
+        else if (cmd == 'p' && audioPipeline) {
+            // Play: Play recording on speaker
+            Serial.println("\n[CMD] Playing /recording.wav on speaker...");
+            File file = SPIFFS.open("/recording.wav", FILE_READ);
+            if (file) {
+                // Skip WAV header (44 bytes)
+                file.seek(44);
+
+                I2SManager* i2s = audioPipeline->getI2S();
+                if (i2s) {
+                    int16_t buffer[320];
+                    while (file.available()) {
+                        size_t bytesRead = file.read((uint8_t*)buffer, sizeof(buffer));
+                        size_t samplesRead = bytesRead / 2;
+                        i2s->writeSpeaker(buffer, samplesRead);
+                        delay(20);  // 20ms per frame
+                    }
+                    Serial.println("[CMD] ✓ Playback complete");
+                } else {
+                    Serial.println("[CMD] ✗ Speaker not available");
+                }
+                file.close();
+            } else {
+                Serial.println("[CMD] ✗ No recording found. Press 'r' first");
+            }
+        }
+        else if (cmd == 'h') {
+            // Help
+            Serial.println("\n=== Audio Debug Commands ===");
+            Serial.println("r - Record current wake word buffer to /recording.wav");
+            Serial.println("d - Download recording over serial (save to file on PC)");
+            Serial.println("p - Play recording on device speaker");
+            Serial.println("h - Show this help");
+            Serial.println("===========================\n");
+        }
+    }
 
 #ifndef DISABLE_AUDIO_TEMP
     // Process call manager (check timeouts, state transitions)
@@ -249,86 +332,6 @@ void loop() {
         if (millis() - lastRegistryCheck > 10000) {  // Every 10 seconds
             lastRegistryCheck = millis();
             deviceRegistry->checkTimeouts();
-        }
-    }
-
-    // Handle debug recording commands
-    if (Serial.available()) {
-        char c = Serial.read();
-        if (c == 'r') {
-            if (!debugAudioBuffer) {
-                debugAudioBuffer = (int16_t*)ps_malloc(DEBUG_BUFFER_SIZE * sizeof(int16_t));
-                if (!debugAudioBuffer) {
-                    debugAudioBuffer = (int16_t*)malloc(DEBUG_BUFFER_SIZE * sizeof(int16_t));
-                }
-            }
-
-            if (debugAudioBuffer) {
-                debugBufferIndex = 0;
-                isRecording = true;
-                Serial.println("Recording started (3s buffer)...");
-            } else {
-                Serial.println("Failed to allocate recording buffer!");
-            }
-        } else if (c == 'd') {
-            isRecording = false;
-            Serial.println("Recording stopped.");
-            if (debugAudioBuffer && debugBufferIndex > 0) {
-                Serial.printf("Downloading %d samples...\n", debugBufferIndex);
-
-                // Print WAV header
-                uint32_t sampleRate = 16000;
-                uint32_t channels = 1;
-                uint32_t bitsPerSample = 16;
-                uint32_t byteRate = sampleRate * channels * bitsPerSample / 8;
-                uint32_t blockAlign = channels * bitsPerSample / 8;
-                uint32_t dataSize = debugBufferIndex * sizeof(int16_t);
-                uint32_t riffSize = dataSize + 36;
-
-                Serial.println("--- BEGIN WAV FILE ---");
-
-                // RIFF header
-                Serial.write("RIFF", 4);
-                Serial.write((uint8_t*)&riffSize, 4);
-                Serial.write("WAVE", 4);
-
-                // fmt chunk
-                Serial.write("fmt ", 4);
-                uint32_t fmtSize = 16;
-                Serial.write((uint8_t*)&fmtSize, 4);
-                uint16_t audioFormat = 1; // PCM
-                Serial.write((uint8_t*)&audioFormat, 2);
-                Serial.write((uint8_t*)&channels, 2);
-                Serial.write((uint8_t*)&sampleRate, 4);
-                Serial.write((uint8_t*)&byteRate, 4);
-                Serial.write((uint8_t*)&blockAlign, 2);
-                Serial.write((uint8_t*)&bitsPerSample, 2);
-
-                // data chunk
-                Serial.write("data", 4);
-                Serial.write((uint8_t*)&dataSize, 4);
-
-                // Audio data - send in chunks to avoid watchdog timeout
-                uint8_t* bytePtr = (uint8_t*)debugAudioBuffer;
-                size_t remaining = dataSize;
-                const size_t CHUNK_SIZE = 512;
-
-                while (remaining > 0) {
-                    size_t toWrite = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
-                    Serial.write(bytePtr, toWrite);
-                    bytePtr += toWrite;
-                    remaining -= toWrite;
-
-                    // Feed watchdog / allow background tasks
-                    yield();
-                }
-
-                Serial.println(); // Newline at the end
-                Serial.println("--- END WAV FILE ---");
-                Serial.println("Download complete.");
-            } else {
-                Serial.println("Buffer empty or not allocated.");
-            }
         }
     }
 
@@ -859,27 +862,6 @@ void audioTask(void* parameter) {
         // Process audio pipeline (handles all audio I/O, encoding, decoding)
         // This includes wake word detection when in IDLE mode
         audioPipeline->process();
-
-        // Debug recording
-        if (isRecording && debugAudioBuffer) {
-            int16_t* currentFrame = audioPipeline->getMicFrame();
-            size_t frameSize = audioPipeline->getFrameSize();
-
-            if (currentFrame && frameSize > 0) {
-                // Copy frame to debug buffer
-                size_t samplesToCopy = frameSize;
-                if (debugBufferIndex + samplesToCopy > DEBUG_BUFFER_SIZE) {
-                    samplesToCopy = DEBUG_BUFFER_SIZE - debugBufferIndex;
-                    isRecording = false; // Buffer full
-                    Serial.println("Recording stopped (buffer full).");
-                }
-
-                if (samplesToCopy > 0) {
-                    memcpy(debugAudioBuffer + debugBufferIndex, currentFrame, samplesToCopy * sizeof(int16_t));
-                    debugBufferIndex += samplesToCopy;
-                }
-            }
-        }
 
         // Phase 6: Process speech recognition when in LISTENING state
         if (stateMachine && stateMachine->getState() == AppState::LISTENING) {

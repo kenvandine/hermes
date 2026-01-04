@@ -66,7 +66,7 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     writeReg(ES8311_REG44, 0x58);  // Set internal reference signal (ADCL + DACR)
 
     // Set default gain and volume
-    setMicGain(GAIN_36DB);      // 36dB microphone gain
+    setMicGain(GAIN_24DB);      // 24dB microphone gain (higher values break audio)
     setVolume(70);              // 70% speaker volume
     muteMic(false);             // Unmute microphone
     muteDAC(false);             // Unmute speaker
