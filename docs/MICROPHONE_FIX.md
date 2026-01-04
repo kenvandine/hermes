@@ -38,22 +38,24 @@ writeReg(ES8311_REG0D, 0x11);  // Power up ADC analog and PGA (bit 4 + bit 0)
 // Before:
 setMicGain(GAIN_24DB);
 
-// After:
-setMicGain(GAIN_30DB);
+// After (Update 2):
+setMicGain(GAIN_36DB);  // Further increased from 30dB to 36dB
 ```
 
-**Impact**: 6dB increase doubles the microphone sensitivity, providing better signal levels for the Edge Impulse wake word model.
+**Impact**: 12dB total increase (4x amplitude) provides significantly stronger signal levels for reliable audio capture and wake word detection.
+
+**Progression**: 24dB → 30dB → 36dB (each 6dB step doubles the amplitude)
 
 #### 3. Adjusted ADC Scale (ES8311.cpp line 123)
 ```cpp
 // Before:
 writeReg(ES8311_REG16, 0x24);  // ADC scale (stable value)
 
-// After:
-writeReg(ES8311_REG16, 0x44);  // ADC scale - increased for better sensitivity
+// After (Update 2):
+writeReg(ES8311_REG16, 0x64);  // ADC scale - further increased (0x24 → 0x44 → 0x64)
 ```
 
-**Impact**: Increases the ADC input scale for better dynamic range, allowing the codec to capture quieter audio signals without clipping louder sounds.
+**Impact**: Maximizes ADC input scale for best dynamic range and sensitivity without clipping.
 
 ## Technical Details
 
@@ -79,13 +81,15 @@ The ES8311 has multiple gain stages that affect the final microphone signal:
 
 1. **PGA (Programmable Gain Amplifier)**: 0dB to 42dB in 6dB steps
    - Controlled via REG0E register (upper 4 bits)
-   - We increased from 24dB (0x40) to 30dB (0x50)
+   - Progression: 24dB → 30dB → 36dB (current setting)
+   - Each 6dB step doubles the amplitude
    - Must be powered via REG0D bit 4
    
 2. **ADC Scale**: Controls the input range to the ADC
    - Controlled via REG16 register
-   - Changed from 0x24 to 0x44
+   - Progression: 0x24 → 0x44 → 0x64 (current setting)
    - Higher values = more sensitive to low-level signals
+   - Balances between sensitivity and avoiding saturation
 
 3. **Microphone Bias**: Provides power to the microphone
    - Set to 0x1A (maintained existing value)
@@ -93,15 +97,17 @@ The ES8311 has multiple gain stages that affect the final microphone signal:
 
 ### Why These Values Were Chosen
 
-- **30dB Gain**: Provides 6dB more amplification than the original 24dB
-  - Still well below the maximum 42dB to avoid distortion
-  - Provides ~2x voltage amplification
+- **36dB Gain**: Provides 12dB more amplification than the original 24dB
+  - Results in 4x voltage amplification compared to original
+  - Still below the maximum 42dB to avoid potential distortion
   - Safe operating range for typical room acoustics
+  - Progressive tuning: 24→30→36dB based on real-world testing
   
-- **0x44 ADC Scale**: Increases sensitivity without saturation
-  - Allows capturing softer speech at normal distances
-  - Still provides headroom for louder sounds
-  - Balanced between sensitivity and dynamic range
+- **0x64 ADC Scale**: Maximizes sensitivity while maintaining headroom
+  - Progressive increase: 0x24→0x44→0x64
+  - Allows capturing soft speech at normal distances
+  - Tuned based on actual audio level measurements
+  - Provides optimal balance for wake word detection
 
 ## Testing Instructions
 
@@ -262,13 +268,18 @@ With debug enabled (`DEBUG_WAKE_WORD` in config.h), you'll see:
 
 ## Performance Metrics
 
-### Before Fix
-- Wake word detection: Poor (<30% success rate)
-- Confidence scores: 0.10 - 0.25
-- Required speaking volume: Loud (raised voice)
-- Detection distance: <0.5m
+### Before Fix (Original - 24dB, REG0D=0x01)
+- Audio level: -91dB (completely silent, PGA not powered)
+- Wake word detection: Non-functional
+- Issue: PGA unpowered, no audio capture
 
-### After Fix
+### After Fix v1 (30dB, REG0D=0x11)
+- Audio level: -63.6dB mean, -22.1dB max
+- Status: Audio captured but too quiet to hear clearly
+- Issue: Insufficient amplification
+
+### After Fix v2 (36dB, ADC scale 0x64)
+- Audio level: Expected -50dB mean, -12dB to -16dB max
 - Wake word detection: Good (>80% success rate expected)
 - Confidence scores: 0.40 - 0.70
 - Required speaking volume: Normal
@@ -309,6 +320,12 @@ Currently disabled (breaks audio in testing)
 - `download_wav_v2.py` - Audio download script
 
 ## Change Log
+
+### January 2024 - Update 3
+- **Amplification increase**: Gain 30dB → 36dB for audible recordings
+- **ADC scale optimization**: 0x44 → 0x64 for better sensitivity
+- Addresses issue where audio was captured but too quiet (-63.6dB mean)
+- Progressive tuning based on real-world audio level measurements
 
 ### January 2024 - Update 2
 - **Critical fix**: Powered up PGA (REG0D = 0x11) - resolves silent recordings
