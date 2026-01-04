@@ -113,7 +113,7 @@ void ES8311::configureADC() {
     delay(10);
 
     // Power up analog
-    writeReg(ES8311_REG0D, 0x11);  // Power up ADC analog and PGA (bit 4 + bit 0)
+    writeReg(ES8311_REG0D, 0x11);  // Power up ADC analog and PGA (0x11 needed for volume)
     writeReg(ES8311_REG0E, 0x02);  // PGA input selection (differential input)
 
     // System configuration
@@ -121,7 +121,7 @@ void ES8311::configureADC() {
     writeReg(ES8311_REG14, 0x1A);  // Microphone bias (0x1E causes issues)
 
     // ADC path configuration
-    writeReg(ES8311_REG16, 0x64);  // ADC scale - further increased for better sensitivity (was 0x44)
+    writeReg(ES8311_REG16, 0x64);  // ADC scale (higher gain for better sensitivity)
     writeReg(ES8311_REG17, 0xBF);  // ADC enable/channel config
     writeReg(ES8311_REG15, 0x40);  // ADC mute control (unmuted)
 
@@ -134,7 +134,7 @@ void ES8311::configureADC() {
     writeReg(ES8311_REG44, 0x08);  // Internal reference: normal
 
     // I2S format for ADC
-    writeReg(ES8311_REG09, 0x0C);  // ADC I2S format: standard I2S, 16-bit (bits[3:2]=11 for data width)
+    writeReg(ES8311_REG09, 0x0C);  // ADC I2S format: standard I2S, 16-bit
     writeReg(ES8311_REG0A, 0x0C);  // ADC I2S mode: standard I2S, 16-bit
 }
 
