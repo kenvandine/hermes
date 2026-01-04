@@ -1,0 +1,35 @@
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Reshape, InputLayer
+
+# Training configuration
+BATCH_SIZE = 32
+EPOCHS = 150
+LEARNING_RATE = 0.0005
+
+# Build model - FIX: Add InputLayer and handle shape properly
+model = Sequential([
+    InputLayer(input_shape=(input_length,)),  # Explicitly define input
+    Dense(32, activation='relu'),              # First dense layer
+    Dropout(0.25),
+    Dense(16, activation='relu'),              # Second dense layer  
+    Dropout(0.25),
+    Dense(classes, activation='softmax')       # Output layer
+])
+
+# Compile
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Train
+callbacks.append(BatchLoggerCallback(BATCH_SIZE, train_sample_count, epochs=EPOCHS))
+
+model.fit(train_dataset,
+          epochs=EPOCHS,
+          validation_data=validation_dataset,
+          callbacks=callbacks,
+          verbose=2)
+

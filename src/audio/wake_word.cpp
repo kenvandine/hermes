@@ -139,6 +139,11 @@ bool WakeWord::begin(uint32_t rate, float thresh) {
     rollingBufferPos = 0;
     memset(rollingBuffer, 0, rollingBufferSize * sizeof(int16_t));
 
+    // Verify PSRAM allocation
+    Serial.printf("[WakeWord] Rolling buffer allocated at: %p\n", (void*)rollingBuffer);
+    Serial.printf("[WakeWord] Is in PSRAM: %s\n",
+                  heap_caps_get_allocated_size(rollingBuffer) > 0 ? "yes" : "unknown");
+
     initialized = true;
     Serial.printf("[WakeWord] ✓ Initialized (threshold: %.2f, buffer: %d samples)\n",
                   threshold, rollingBufferSize);
