@@ -26,7 +26,7 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     writeReg(ES8311_REG01, 0x30);
     writeReg(ES8311_REG02, 0x00);
     writeReg(ES8311_REG03, 0x10);
-    writeReg(ES8311_REG16, 0x24);  // ADC scale
+    writeReg(ES8311_REG16, 0x64);  // ADC scale - set early (will be confirmed in configureADC)
     writeReg(ES8311_REG04, 0x10);
     writeReg(ES8311_REG05, 0x00);
 
