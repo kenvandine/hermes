@@ -82,12 +82,14 @@ lv_obj_t* ScreenIdle::create(void* uiManager) {
     lv_obj_set_style_border_width(footer, 0, 0);
     lv_obj_set_style_radius(footer, 0, 0);
     lv_obj_set_style_pad_all(footer, UI_MARGIN, 0);
+    lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE);  // Disable scrolling on footer
 
     // Settings button
     lv_obj_t* btnSettings = lv_btn_create(footer);
     lv_obj_set_size(btnSettings, 120, 50);
     lv_obj_align(btnSettings, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_bg_color(btnSettings, lv_color_hex(UI_COLOR_SECONDARY), 0);
+    lv_obj_add_flag(btnSettings, LV_OBJ_FLAG_CLICKABLE);  // Explicitly make clickable
     lv_obj_add_event_cb(btnSettings, settingsButtonCallback, LV_EVENT_CLICKED, uiManager);
 
     lv_obj_t* lblSettings = lv_label_create(btnSettings);
