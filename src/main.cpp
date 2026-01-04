@@ -58,6 +58,9 @@
 #include "ai/ai_manager.h"
 #endif
 
+// HAL Components (multi-device support)
+#include "hal/hal_factory.h"
+
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
@@ -87,6 +90,9 @@ OllamaClient* ollamaClient = nullptr;
 TTSEngine* ttsEngine = nullptr;
 AIManager* aiManager = nullptr;
 #endif
+
+// HAL: Hardware Abstraction Layer
+std::unique_ptr<HALAudio> halAudio = nullptr;
 
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
@@ -285,13 +291,13 @@ void loop() {
                 // Skip WAV header (44 bytes)
                 file.seek(44);
 
-                I2SManager* i2s = audioPipeline->getI2S();
-                if (i2s) {
+                HALAudio* audio = audioPipeline->getAudio();
+                if (audio) {
                     int16_t buffer[320];
                     while (file.available()) {
                         size_t bytesRead = file.read((uint8_t*)buffer, sizeof(buffer));
                         size_t samplesRead = bytesRead / 2;
-                        i2s->writeSpeaker(buffer, samplesRead);
+                        audio->writeSpeaker(buffer, samplesRead);
                         delay(20);  // 20ms per frame
                     }
                     Serial.println("[CMD] ✓ Playback complete");
@@ -553,18 +559,29 @@ void setupDisplay() {
 
 #ifndef DISABLE_AUDIO_TEMP
 void setupAudio() {
-    Serial.println("[AUDIO] Initializing audio pipeline...");
+    Serial.println("[AUDIO] Initializing audio subsystem...");
 
-    audioPipeline = new AudioPipeline();
+    // Create HAL audio instance for this device
+    Serial.printf("[AUDIO] Creating audio HAL for device: %s\n", HALFactory::getDeviceName());
+    halAudio = HALFactory::createAudio();
+
+    if (!halAudio) {
+        Serial.println("[AUDIO] ✗ Failed to create audio HAL!");
+        return;
+    }
+
+    // Create audio pipeline with HAL
+    audioPipeline = new AudioPipeline(halAudio.get());
 
     if (!audioPipeline->begin(AUDIO_SAMPLE_RATE)) {
         Serial.println("[AUDIO] ✗ Failed to initialize audio pipeline!");
         delete audioPipeline;
         audioPipeline = nullptr;
+        halAudio.reset();
         return;
     }
 
-    Serial.println("[AUDIO] ✓ Audio pipeline initialized successfully");
+    Serial.println("[AUDIO] ✓ Audio subsystem initialized successfully");
 
     // Register wake word callback
     audioPipeline->onWakeWordDetected([]() {
@@ -867,9 +884,9 @@ void audioTask(void* parameter) {
         if (stateMachine && stateMachine->getState() == AppState::LISTENING) {
             if (speechRecognizer && speechRecognizer->isEnabled()) {
                 // Read audio from microphone for speech recognition
-                I2SManager* i2s = audioPipeline->getI2S();
-                if (i2s && audioFrame) {
-                    size_t samplesRead = i2s->readMicrophone(audioFrame, 320);
+                HALAudio* audio = audioPipeline->getAudio();
+                if (audio && audioFrame) {
+                    size_t samplesRead = audio->readMicrophone(audioFrame, 320);
                     if (samplesRead > 0) {
                         speechRecognizer->process(audioFrame, samplesRead);
                     }

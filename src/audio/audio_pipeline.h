@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "i2s_manager.h"
+#include "hal/hal_audio.h"
 #include "opus_codec.h"
 #include "audio_buffer.h"
 #include "wake_word.h"
@@ -40,7 +40,11 @@ enum class AudioMode {
  */
 class AudioPipeline {
 public:
-    AudioPipeline();
+    /**
+     * Create audio pipeline with HAL audio interface
+     * @param audio HAL audio interface (must remain valid for lifetime of AudioPipeline)
+     */
+    AudioPipeline(HALAudio* audio);
     ~AudioPipeline();
 
     /**
@@ -123,7 +127,7 @@ public:
     /**
      * Get components (for advanced use)
      */
-    I2SManager* getI2S() { return i2s; }
+    HALAudio* getAudio() { return audio; }
     OpusCodec* getCodec() { return codec; }
     UdpAudio* getUdp() { return udp; }
     WakeWord* getWakeWord() { return wakeWord; }
@@ -154,7 +158,7 @@ public:
     void setWakeWordThreshold(float threshold);
 
 private:
-    I2SManager* i2s;
+    HALAudio* audio;  // Hardware abstraction layer for audio I/O
     OpusCodec* codec;
     UdpAudio* udp;
     WakeWord* wakeWord;

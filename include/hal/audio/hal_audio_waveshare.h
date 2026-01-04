@@ -2,9 +2,11 @@
 #define HAL_AUDIO_WAVESHARE_H
 
 #include "hal/hal_audio.h"
-#include "audio/ES8311.h"
-#include "audio/i2s_manager.h"
 #include <memory>
+
+// Forward declarations
+class ES8311;
+class I2SManager;
 
 /**
  * Waveshare Audio HAL Implementation
@@ -14,7 +16,7 @@
 class HALAudioWaveshare : public HALAudio {
 public:
     HALAudioWaveshare();
-    virtual ~HALAudioWaveshare() = default;
+    virtual ~HALAudioWaveshare();  // Defined in .cpp to allow incomplete types in unique_ptr
 
     // HALAudio interface implementation
     bool begin(uint32_t sampleRate) override;

@@ -1,10 +1,12 @@
 /**
  * Waveshare Audio HAL Implementation
+ *
+ * Wraps I2SManager which handles ES8311 codec + I2S communication
  */
 
 #include "hal/audio/hal_audio_waveshare.h"
+#include "audio/i2s_manager.h"
 #include "devices/waveshare/device_config.h"
-#include "devices/waveshare/device_pins.h"
 #include <Arduino.h>
 
 HALAudioWaveshare::HALAudioWaveshare()
@@ -15,58 +17,97 @@ HALAudioWaveshare::HALAudioWaveshare()
     , speakerReady_(false) {
 }
 
+HALAudioWaveshare::~HALAudioWaveshare() {
+    // Destructor must be defined in .cpp to allow unique_ptr with incomplete types
+}
+
 bool HALAudioWaveshare::begin(uint32_t sampleRate) {
     sampleRate_ = sampleRate;
 
-    Serial.println("[HAL-Audio-Waveshare] HAL foundation - full integration pending");
+    Serial.println("[HAL-Audio-Waveshare] Initializing ES8311 codec + I2S...");
 
-    // TODO: Full HAL integration requires refactoring AudioPipeline to use
-    // HALAudio instead of creating ES8311 and I2SManager directly.
-    // For now, audio is initialized directly in AudioPipeline
+    // Create I2SManager instance (which contains ES8311 codec)
+    i2sManager_ = std::make_unique<I2SManager>();
 
-    Serial.println("[HAL-Audio-Waveshare] ✓ Audio HAL stub initialized");
+    // Initialize ES8311 codec
+    if (!i2sManager_->begin(sampleRate_)) {
+        Serial.println("[HAL-Audio-Waveshare] Failed to initialize codec");
+        return false;
+    }
+
+    // Initialize microphone and speaker
+    if (!beginMicrophone(sampleRate_)) {
+        Serial.println("[HAL-Audio-Waveshare] Failed to initialize microphone");
+        return false;
+    }
+
+    if (!beginSpeaker(sampleRate_)) {
+        Serial.println("[HAL-Audio-Waveshare] Failed to initialize speaker");
+        return false;
+    }
+
+    Serial.println("[HAL-Audio-Waveshare] ✓ Audio HAL initialized");
     return true;
 }
 
 bool HALAudioWaveshare::beginMicrophone(uint32_t sampleRate) {
-    (void)sampleRate;
-    // TODO: Initialize microphone via HAL
-    return false;
+    if (!i2sManager_) {
+        return false;
+    }
+
+    if (!i2sManager_->beginMicrophone(sampleRate)) {
+        return false;
+    }
+
+    micReady_ = true;
+    return true;
 }
 
 bool HALAudioWaveshare::beginSpeaker(uint32_t sampleRate) {
-    (void)sampleRate;
-    // TODO: Initialize speaker via HAL
-    return false;
+    if (!i2sManager_) {
+        return false;
+    }
+
+    if (!i2sManager_->beginSpeaker(sampleRate)) {
+        return false;
+    }
+
+    speakerReady_ = true;
+    return true;
 }
 
 size_t HALAudioWaveshare::readMicrophone(int16_t* buffer, size_t sampleCount) {
-    (void)buffer;
-    (void)sampleCount;
-    // TODO: Read microphone data via HAL
-    return 0;
+    if (!micReady_ || !i2sManager_) {
+        return 0;
+    }
+
+    return i2sManager_->readMicrophone(buffer, sampleCount);
 }
 
 size_t HALAudioWaveshare::writeSpeaker(const int16_t* buffer, size_t sampleCount) {
-    (void)buffer;
-    (void)sampleCount;
-    // TODO: Write speaker data via HAL
-    return 0;
+    if (!speakerReady_ || !i2sManager_) {
+        return 0;
+    }
+
+    return i2sManager_->writeSpeaker(buffer, sampleCount);
 }
 
 void HALAudioWaveshare::setVolume(uint8_t volume) {
-    (void)volume;
-    // TODO: Set volume via HAL
+    if (i2sManager_) {
+        i2sManager_->setVolume(volume);
+    }
 }
 
 void HALAudioWaveshare::setMicGain(uint8_t gainStep) {
-    (void)gainStep;
-    // TODO: Set mic gain via HAL
+    if (i2sManager_) {
+        i2sManager_->setMicGain(gainStep);
+    }
 }
 
 void HALAudioWaveshare::mute(bool enabled) {
-    (void)enabled;
-    // TODO: Mute/unmute via HAL
+    if (i2sManager_) {
+        i2sManager_->mute(enabled);
+    }
 }
 
 uint32_t HALAudioWaveshare::getSampleRate() const {
