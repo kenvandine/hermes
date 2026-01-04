@@ -244,26 +244,49 @@ void UIManager::displayFlushCallback(lv_disp_drv_t* disp, const lv_area_t* area,
 }
 
 void UIManager::touchReadCallback(lv_indev_drv_t* drv, lv_indev_data_t* data) {
+    // Debug: Log callback invocation
+    static uint32_t callCount = 0;
+    static uint32_t lastDebugTime = 0;
+    callCount++;
+
+    if (millis() - lastDebugTime > 2000) {
+        Serial.printf("[TOUCH_DBG] Callback invoked (count: %d)\n", callCount);
+        lastDebugTime = millis();
+    }
+
     UIManager* ui = (UIManager*)drv->user_data;
     if (!ui || !FT3168) {
+        Serial.println("[TOUCH_DBG] ERROR: ui or FT3168 is null!");
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
 
     uint8_t fingers = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER);
+
+    // Debug: Log finger count
+    static uint8_t lastFingers = 0;
+    if (fingers != lastFingers) {
+        Serial.printf("[TOUCH_DBG] Fingers detected: %d\n", fingers);
+        lastFingers = fingers;
+    }
+
     if (fingers > 0) {
         int32_t x = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
         int32_t y = FT3168->IIC_Read_Device_Value(Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
 
-        // FT3168 returns 12-bit coordinates (0-4095), scale to display resolution
-        // Touch panel native range: 0-4095
-        // Display resolution: 368x448
-        if (x >= 0 && x <= 4095 && y >= 0 && y <= 4095) {
-            data->point.x = (x * DISPLAY_WIDTH) / 4096;
-            data->point.y = (y * DISPLAY_HEIGHT) / 4096;
+        Serial.printf("[TOUCH] Raw coordinates: x=%d, y=%d (bounds: 0-%d, 0-%d)\n",
+                      x, y, DISPLAY_WIDTH-1, DISPLAY_HEIGHT-1);
+
+        // FT3168 appears to return coordinates already in pixel space, not 12-bit
+        // Just use them directly with bounds checking
+        if (x >= 0 && x < DISPLAY_WIDTH && y >= 0 && y < DISPLAY_HEIGHT) {
+            data->point.x = x;
+            data->point.y = y;
             data->state = LV_INDEV_STATE_PRESSED;
+            Serial.printf("[TOUCH] ✓ Valid touch at (%d, %d)\n", x, y);
         } else {
-            // Invalid coordinates, treat as released
+            // Out of bounds, treat as released
+            Serial.printf("[TOUCH] Out of bounds: (%d, %d)\n", x, y);
             data->state = LV_INDEV_STATE_RELEASED;
         }
     } else {
@@ -395,6 +418,19 @@ void UIManager::setVolume(uint8_t volume) {
 }
 #else
 void UIManager::setVolume(uint8_t volume) {
+    // No-op when audio is disabled
+}
+#endif
+
+#ifndef DISABLE_AUDIO_TEMP
+void UIManager::setMicGain(uint8_t gainStep) {
+    if (audioPipeline) {
+        audioPipeline->setMicGain(gainStep);
+        Serial.printf("[UI] Microphone gain set to %ddB\n", gainStep * 6);
+    }
+}
+#else
+void UIManager::setMicGain(uint8_t gainStep) {
     // No-op when audio is disabled
 }
 #endif

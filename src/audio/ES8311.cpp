@@ -10,8 +10,8 @@ ES8311::ES8311() : sample_rate_(16000) {
 bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     sample_rate_ = sample_rate;
 
-    // Initialize I2C
-    Wire.begin(i2c_sda, i2c_scl);
+    // I2C is already initialized in main.cpp, just set clock speed
+    // Wire.begin() is called earlier for touch screen compatibility
     Wire.setClock(100000);  // 100kHz I2C clock
 
     delay(10);
@@ -26,7 +26,7 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     writeReg(ES8311_REG01, 0x30);
     writeReg(ES8311_REG02, 0x00);
     writeReg(ES8311_REG03, 0x10);
-    writeReg(ES8311_REG16, 0x24);  // ADC scale
+    writeReg(ES8311_REG16, 0x64);  // ADC scale - set early (will be confirmed in configureADC)
     writeReg(ES8311_REG04, 0x10);
     writeReg(ES8311_REG05, 0x00);
 
@@ -66,7 +66,7 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     writeReg(ES8311_REG44, 0x58);  // Set internal reference signal (ADCL + DACR)
 
     // Set default gain and volume
-    setMicGain(GAIN_24DB);      // 24dB microphone gain (higher values break audio)
+    setMicGain(GAIN_36DB);      // 36dB microphone gain (42dB causes issues)
     setVolume(70);              // 70% speaker volume
     muteMic(false);             // Unmute microphone
     muteDAC(false);             // Unmute speaker
@@ -74,11 +74,12 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     // Verify critical ADC registers
     Serial.println("[ES8311] Verifying ADC configuration:");
     Serial.printf("  REG02 (CLK_SRC): 0x%02X (expect 0x00 for MCLK)\n", readReg(ES8311_REG02));
+    Serial.printf("  REG0D (ADC_PWR): 0x%02X (expect 0x11 for ADC+PGA powered)\n", readReg(ES8311_REG0D));
+    Serial.printf("  REG0E (PGA_GAIN): 0x%02X\n", readReg(ES8311_REG0E));
     Serial.printf("  REG14 (MIC_BIAS): 0x%02X\n", readReg(ES8311_REG14));
     Serial.printf("  REG16 (ADC_SCALE): 0x%02X\n", readReg(ES8311_REG16));
     Serial.printf("  REG17 (ADC_PDN): 0x%02X (expect 0xBF for powered up)\n", readReg(ES8311_REG17));
     Serial.printf("  REG15 (ADC_MUTE): 0x%02X (expect 0x40 for unmuted)\n", readReg(ES8311_REG15));
-    Serial.printf("  REG0E (PGA_GAIN): 0x%02X\n", readReg(ES8311_REG0E));
 
     Serial.println("[ES8311] ✓ Codec initialized");
     return true;
@@ -112,15 +113,15 @@ void ES8311::configureADC() {
     delay(10);
 
     // Power up analog
-    writeReg(ES8311_REG0D, 0x01);  // Power up ADC analog
-    writeReg(ES8311_REG0E, 0x02);  // Enable analog PGA
+    writeReg(ES8311_REG0D, 0x11);  // Power up ADC analog and PGA (bit 4 + bit 0)
+    writeReg(ES8311_REG0E, 0x02);  // PGA input selection (differential input)
 
     // System configuration
     writeReg(ES8311_REG12, 0x00);  // System config
-    writeReg(ES8311_REG14, 0x1A);  // Microphone bias and DMIC config
+    writeReg(ES8311_REG14, 0x1A);  // Microphone bias (0x1E causes issues)
 
     // ADC path configuration
-    writeReg(ES8311_REG16, 0x24);  // ADC scale (stable value)
+    writeReg(ES8311_REG16, 0x64);  // ADC scale - further increased for better sensitivity (was 0x44)
     writeReg(ES8311_REG17, 0xBF);  // ADC enable/channel config
     writeReg(ES8311_REG15, 0x40);  // ADC mute control (unmuted)
 

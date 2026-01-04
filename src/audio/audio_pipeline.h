@@ -96,6 +96,11 @@ public:
     void setVolume(uint8_t volume);
 
     /**
+     * Set microphone gain (0-6: 0dB to 36dB in 6dB steps)
+     */
+    void setMicGain(uint8_t gainStep);
+
+    /**
      * Mute/unmute speaker
      */
     void mute(bool enabled);

@@ -253,6 +253,17 @@ void I2SManager::mute(bool enabled) {
     muted = enabled;
 }
 
+void I2SManager::setMicGain(uint8_t gainStep) {
+    if (codecReady) {
+        // Convert 0-6 step to ES8311_MicGain enum (0=0dB, 1=6dB, ... 6=36dB)
+        // Limit to GAIN_36DB (6) as maximum stable value
+        if (gainStep > 6) gainStep = 6;
+        ES8311_MicGain gain = (ES8311_MicGain)gainStep;
+        codec.setMicGain(gain);
+        Serial.printf("[I2S] Microphone gain set to %ddB\n", gainStep * 6);
+    }
+}
+
 bool I2SManager::isMicrophoneReady() const {
     return micReady;
 }
