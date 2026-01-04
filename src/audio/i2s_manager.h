@@ -9,13 +9,13 @@
  * I2SManager
  *
  * Manages I2S hardware for audio input (microphone) and output (speaker).
- * Supports ESP32-S3 with I2S port.
+ * Supports ESP32-S3 with dual I2S ports.
  *
  * Features:
  * - Configurable sample rate and bit depth
  * - DMA buffering for efficient transfers
  * - Volume control
- * - Single I2S port for full duplex audio (Microphone and Speaker)
+ * - Microphone and speaker on separate I2S ports
  */
 class I2SManager {
 public:
@@ -31,7 +31,8 @@ public:
     bool begin(uint32_t sampleRate = 16000);
 
     /**
-     * Enable microphone input
+     * Initialize I2S for microphone input
+     * Note: Call begin() first to initialize ES8311 codec
      * @param sampleRate Sample rate in Hz (e.g., 16000)
      * @param bitsPerSample Bits per sample (16 or 32)
      * @return true if successful
@@ -39,7 +40,7 @@ public:
     bool beginMicrophone(uint32_t sampleRate = 16000, i2s_bits_per_sample_t bitsPerSample = I2S_BITS_PER_SAMPLE_16BIT);
 
     /**
-     * Enable speaker output
+     * Initialize I2S for speaker output
      * @param sampleRate Sample rate in Hz (e.g., 16000)
      * @param bitsPerSample Bits per sample (16 or 32)
      * @return true if successful
@@ -110,14 +111,15 @@ public:
 private:
     ES8311 codec;  // Audio codec for built-in mic/speaker
 
-    i2s_port_t i2sPort;
+    i2s_port_t micPort;
+    i2s_port_t speakerPort;
 
-    uint32_t currentSampleRate;
+    uint32_t micSampleRate;
+    uint32_t speakerSampleRate;
 
     bool codecReady;
-    bool i2sReady;
-    bool micEnabled;
-    bool speakerEnabled;
+    bool micReady;
+    bool speakerReady;
     bool muted;
 
     uint8_t volume;  // 0-100
