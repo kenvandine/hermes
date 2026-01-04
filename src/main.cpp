@@ -439,51 +439,65 @@ void setupDisplay() {
         return;
     }
 
-    // Initialize display hardware
+    // Check device capabilities
+    DisplayCapabilities caps = halDisplay->getCapabilities();
+    Serial.printf("[DISPLAY] Device capabilities: fullUI=%d, LEDRing=%d, touchScreen=%d\n",
+                  caps.hasFullUI, caps.hasLEDRing, caps.hasTouchScreen);
+
+    // Initialize display hardware (LED ring or full display)
     if (!halDisplay->begin()) {
         Serial.println("[DISPLAY] ✗ Failed to initialize display HAL!");
         halDisplay.reset();
         return;
     }
 
-    // Get the initialized display driver for UIManager
-    gfx = static_cast<HALDisplayWaveshare*>(halDisplay.get())->getDisplayDriver();
-    if (!gfx) {
-        Serial.println("[DISPLAY] ✗ No display driver from HAL!");
-        return;
-    }
+    // Only create UIManager for devices with full UI (LVGL)
+    if (caps.hasFullUI) {
+        // Get the initialized display driver for UIManager
+        #if defined(DEVICE_WAVESHARE)
+        gfx = static_cast<HALDisplayWaveshare*>(halDisplay.get())->getDisplayDriver();
+        if (!gfx) {
+            Serial.println("[DISPLAY] ✗ No display driver from HAL!");
+            return;
+        }
+        #endif
 
-    // Create UI Manager
-    Serial.println("[DISPLAY] Creating UI Manager...");
-    uiManager = new UIManager(stateMachine, deviceRegistry,
+        // Create UI Manager
+        Serial.println("[DISPLAY] Creating UI Manager...");
+        uiManager = new UIManager(stateMachine, deviceRegistry,
 #ifndef DISABLE_AUDIO_TEMP
-        callManager, audioPipeline
+            callManager, audioPipeline
 #else
-        nullptr, nullptr  // No call manager or audio when disabled
+            nullptr, nullptr  // No call manager or audio when disabled
 #endif
-    );
+        );
 
-    if (!uiManager->begin(gfx, &Wire)) {
-        Serial.println("[DISPLAY] ✗ Failed to initialize UI Manager!");
-        delete uiManager;
-        uiManager = nullptr;
-        return;
+        if (!uiManager->begin(gfx, &Wire)) {
+            Serial.println("[DISPLAY] ✗ Failed to initialize UI Manager!");
+            delete uiManager;
+            uiManager = nullptr;
+            return;
+        }
+
+        Serial.println("[DISPLAY] ✓ UI Manager initialized successfully");
+    } else {
+        Serial.println("[DISPLAY] ✓ Display HAL initialized (LED ring mode, no UI)");
+        // For LED-only devices, state changes will be shown via LED patterns
     }
 
-    Serial.println("[DISPLAY] ✓ UI Manager initialized successfully");
-
-    // Create UI task
-    xTaskCreatePinnedToCore(
-        uiTask,
-        "UI Task",
-        TASK_STACK_UI,
-        NULL,
-        TASK_PRIORITY_UI,
-        &uiTaskHandle,
-        TASK_CORE_UI
-    );
-
-    Serial.println("[DISPLAY] UI task created");
+    // Create UI task only if we have a UIManager
+    if (uiManager) {
+        xTaskCreatePinnedToCore(
+            uiTask,
+            "UI Task",
+            TASK_STACK_UI,
+            NULL,
+            TASK_PRIORITY_UI,
+            &uiTaskHandle,
+            TASK_CORE_UI
+        );
+        Serial.println("[DISPLAY] UI task created");
+    }
 }
 
 #ifndef DISABLE_AUDIO_TEMP
