@@ -10,8 +10,8 @@ ES8311::ES8311() : sample_rate_(16000) {
 bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     sample_rate_ = sample_rate;
 
-    // Initialize I2C
-    Wire.begin(i2c_sda, i2c_scl);
+    // I2C is already initialized in main.cpp, just set clock speed
+    // Wire.begin() is called earlier for touch screen compatibility
     Wire.setClock(100000);  // 100kHz I2C clock
 
     delay(10);
