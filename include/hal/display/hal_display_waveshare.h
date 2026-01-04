@@ -2,18 +2,21 @@
 #define HAL_DISPLAY_WAVESHARE_H
 
 #include "hal/hal_display.h"
-#include "ui/ui_manager.h"
-#include <memory>
+#include <Arduino_GFX_Library.h>
 
 /**
  * Waveshare Display HAL Implementation
  *
- * Wraps UIManager for the Waveshare ESP32-S3 1.8" AMOLED display
+ * Handles hardware initialization for Waveshare ESP32-S3 1.8" AMOLED display
+ * - TCA9554 GPIO expander (power control)
+ * - QSPI display interface
+ * - SH8601 AMOLED controller
+ * - FT3168 touch controller
  */
 class HALDisplayWaveshare : public HALDisplay {
 public:
     HALDisplayWaveshare();
-    virtual ~HALDisplayWaveshare() = default;
+    virtual ~HALDisplayWaveshare();
 
     // HALDisplay interface implementation
     bool begin() override;
@@ -26,9 +29,16 @@ public:
     void updateDeviceList() override;
     void updateCallInfo() override;
 
+    /**
+     * Get initialized display driver (for UIManager)
+     * @return Arduino_GFX* display driver (valid after begin() succeeds)
+     */
+    Arduino_GFX* getDisplayDriver() { return gfx_; }
+
 private:
-    std::unique_ptr<UIManager> uiManager_;
+    Arduino_GFX* gfx_;
     DisplayCapabilities capabilities_;
+    uint8_t brightness_;
 };
 
 #endif // HAL_DISPLAY_WAVESHARE_H

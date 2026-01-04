@@ -60,6 +60,7 @@
 
 // HAL Components (multi-device support)
 #include "hal/hal_factory.h"
+#include "hal/display/hal_display_waveshare.h"  // For getDisplayDriver()
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -93,6 +94,7 @@ AIManager* aiManager = nullptr;
 
 // HAL: Hardware Abstraction Layer
 std::unique_ptr<HALAudio> halAudio = nullptr;
+std::unique_ptr<HALDisplay> halDisplay = nullptr;
 
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
@@ -426,103 +428,30 @@ void setupWiFi() {
 }
 
 void setupDisplay() {
-    Serial.println("[DISPLAY] Initializing Waveshare ESP32-S3 1.8\" AMOLED display...");
+    Serial.println("[DISPLAY] Initializing display subsystem...");
 
-    // Initialize I2C for touch controller and TCA9554 GPIO expander
-    Wire.begin(TOUCH_SDA, TOUCH_SCL);
-    Serial.println("[DISPLAY] I2C bus initialized for touch and GPIO expander");
+    // Create HAL display instance for this device
+    Serial.printf("[DISPLAY] Creating display HAL for device: %s\n", HALFactory::getDeviceName());
+    halDisplay = HALFactory::createDisplay();
 
-    // Scan I2C bus to find devices
-    Serial.println("[DISPLAY] Scanning I2C bus...");
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        uint8_t error = Wire.endTransmission();
-        if (error == 0) {
-            Serial.printf("[DISPLAY]   Found I2C device at 0x%02X\n", addr);
-        }
-    }
-
-    // Initialize TCA9554 GPIO expander - try multiple common I2C addresses
-    // TCA9554 address depends on A0/A1/A2 pins: base 0x20-0x27
-    Serial.println("[DISPLAY] Searching for TCA9554 GPIO expander...");
-    uint8_t tca_addr = 0;
-    uint8_t possible_addrs[] = {0x20, 0x24, 0x21, 0x22, 0x23, 0x25, 0x26, 0x27};
-
-    for (int i = 0; i < 8; i++) {
-        Wire.beginTransmission(possible_addrs[i]);
-        if (Wire.endTransmission() == 0) {
-            tca_addr = possible_addrs[i];
-            Serial.printf("[DISPLAY]   Found TCA9554 at 0x%02X\n", tca_addr);
-            break;
-        }
-    }
-
-    if (tca_addr == 0) {
-        Serial.println("[DISPLAY] ✗ TCA9554 not found on I2C bus!");
-        Serial.println("[DISPLAY] Proceeding without GPIO expander...");
-    } else {
-        // Configure all TCA9554 pins as outputs (register 0x03, value 0x00)
-        Wire.beginTransmission(tca_addr);
-        Wire.write(0x03);  // Configuration register
-        Wire.write(0x00);  // All pins as outputs (0 = output, 1 = input)
-        if (Wire.endTransmission() != 0) {
-            Serial.println("[DISPLAY] ✗ Failed to configure TCA9554!");
-        } else {
-            Serial.println("[DISPLAY] ✓ TCA9554 configured (all pins as outputs)");
-        }
-
-        // Enable display power by setting pins 0, 1, 2, 6 HIGH (all expander pins used on this board)
-        Wire.beginTransmission(tca_addr);
-        Wire.write(0x01);  // Output Port register
-        Wire.write(0x47);  // Set pins 0, 1, 2, 6 HIGH (0b01000111)
-        if (Wire.endTransmission() != 0) {
-            Serial.println("[DISPLAY] ✗ Failed to enable display power!");
-        } else {
-            Serial.println("[DISPLAY] ✓ Display power enabled via TCA9554 pins 0,1,2,6");
-        }
-    }
-
-    delay(200);  // Wait for display power to stabilize
-
-    // Create QSPI bus using Arduino_GFX native QSPI support
-    Serial.println("[DISPLAY] Initializing QSPI bus with Arduino_ESP32QSPI...");
-    Arduino_DataBus *bus = new Arduino_ESP32QSPI(
-        TFT_CS,    /* CS: 12 */
-        TFT_SCL,   /* SCK: 11 */
-        TFT_SDA0,  /* SDIO0: 4 */
-        TFT_SDA1,  /* SDIO1: 5 */
-        TFT_SDA2,  /* SDIO2: 6 */
-        TFT_SDA3   /* SDIO3: 7 */
-    );
-
-    // Create SH8601 display driver using Arduino_GFX 1.4.9 built-in driver
-    Serial.println("[DISPLAY] Creating SH8601 display driver (Arduino_GFX 1.4.9)...");
-    gfx = new Arduino_SH8601(bus, GFX_NOT_DEFINED /* RST */, 0 /* rotation */, false /* IPS */, 368 /* width */, 448 /* height */);
-
-    if (!gfx->begin()) {
-        Serial.println("[DISPLAY] ✗ Failed to initialize display!");
+    if (!halDisplay) {
+        Serial.println("[DISPLAY] ✗ Failed to create display HAL!");
         return;
     }
 
-    Serial.println("[DISPLAY] ✓ Display initialized successfully");
+    // Initialize display hardware
+    if (!halDisplay->begin()) {
+        Serial.println("[DISPLAY] ✗ Failed to initialize display HAL!");
+        halDisplay.reset();
+        return;
+    }
 
-    // Set brightness to maximum (AMOLED displays need this!)
-    Serial.println("[DISPLAY] Setting brightness to maximum...");
-    ((Arduino_SH8601*)gfx)->Display_Brightness(255);
-    delay(100);
-
-    // Test display with solid colors
-    Serial.println("[DISPLAY] Testing display with colors...");
-    gfx->fillScreen(RED);
-    delay(1000);
-    gfx->fillScreen(GREEN);
-    delay(1000);
-    gfx->fillScreen(BLUE);
-    delay(1000);
-    gfx->fillScreen(WHITE);
-    delay(1000);
-    gfx->fillScreen(BLACK);
-    Serial.println("[DISPLAY] Color test complete");
+    // Get the initialized display driver for UIManager
+    gfx = static_cast<HALDisplayWaveshare*>(halDisplay.get())->getDisplayDriver();
+    if (!gfx) {
+        Serial.println("[DISPLAY] ✗ No display driver from HAL!");
+        return;
+    }
 
     // Create UI Manager
     Serial.println("[DISPLAY] Creating UI Manager...");
