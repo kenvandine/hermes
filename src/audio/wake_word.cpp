@@ -179,7 +179,7 @@ bool WakeWord::process(const int16_t* samples, size_t sampleCount) {
 
         // When buffer is full, run inference
         if (rollingBufferPos >= rollingBufferSize) {
-            #ifdef DEBUG_WAKE_WORD
+            #if DEBUG_WAKE_WORD
             Serial.printf("[WakeWord] Buffer full (%d samples), running inference...\n", rollingBufferSize);
             #endif
 
@@ -300,7 +300,7 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
 
     // Find the "Hey Hermes" class and check confidence
     // Edge Impulse model will have labels like "Hey Hermes", "noise", "unknown"
-    #ifdef DEBUG_WAKE_WORD
+    #if DEBUG_WAKE_WORD
     Serial.printf("[WakeWord] Inference took %lums, checking %d classes:\n", inferenceTimeMs, EI_CLASSIFIER_LABEL_COUNT);
     #endif
 
@@ -308,7 +308,7 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
         const char* label = result.classification[ix].label;
         float confidence = result.classification[ix].value;
 
-        #ifdef DEBUG_WAKE_WORD
+        #if DEBUG_WAKE_WORD
         Serial.printf("[WakeWord]   %s: %.2f\n", label, confidence);
         #endif
 

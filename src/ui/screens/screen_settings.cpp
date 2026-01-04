@@ -99,6 +99,7 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_t* lblHeader = lv_label_create(header);
     lv_label_set_text(lblHeader, "Settings");
     lv_obj_set_style_text_font(lblHeader, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(lblHeader, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(lblHeader);
 
     int y = UI_HEADER_HEIGHT + 20;
@@ -107,11 +108,13 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_t* lblVolume = lv_label_create(screen);
     lv_label_set_text(lblVolume, "Volume:");
     lv_obj_set_style_text_font(lblVolume, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblVolume, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_set_pos(lblVolume, UI_MARGIN, y);
 
     lblVolumeValue = lv_label_create(screen);
     lv_label_set_text(lblVolumeValue, "80%");
     lv_obj_set_style_text_font(lblVolumeValue, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblVolumeValue, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_align(lblVolumeValue, LV_ALIGN_TOP_RIGHT, -UI_MARGIN, y);
 
     y += 30;
@@ -129,11 +132,13 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_t* lblMicGain = lv_label_create(screen);
     lv_label_set_text(lblMicGain, "Mic Gain:");
     lv_obj_set_style_text_font(lblMicGain, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblMicGain, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_set_pos(lblMicGain, UI_MARGIN, y);
 
     lblMicGainValue = lv_label_create(screen);
     lv_label_set_text(lblMicGainValue, "36dB");  // Default to 36dB (step 6)
     lv_obj_set_style_text_font(lblMicGainValue, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblMicGainValue, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_align(lblMicGainValue, LV_ALIGN_TOP_RIGHT, -UI_MARGIN, y);
 
     y += 30;
@@ -151,11 +156,13 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_t* lblBrightness = lv_label_create(screen);
     lv_label_set_text(lblBrightness, "Brightness:");
     lv_obj_set_style_text_font(lblBrightness, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblBrightness, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_set_pos(lblBrightness, UI_MARGIN, y);
 
     lblBrightnessValue = lv_label_create(screen);
     lv_label_set_text(lblBrightnessValue, "70%");
     lv_obj_set_style_text_font(lblBrightnessValue, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblBrightnessValue, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_align(lblBrightnessValue, LV_ALIGN_TOP_RIGHT, -UI_MARGIN, y);
 
     y += 30;
@@ -173,6 +180,7 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_t* lblWakeWord = lv_label_create(screen);
     lv_label_set_text(lblWakeWord, "Wake Word:");
     lv_obj_set_style_text_font(lblWakeWord, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblWakeWord, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_set_pos(lblWakeWord, UI_MARGIN, y);
 
     lv_obj_t* switchWakeWord = lv_switch_create(screen);
@@ -189,6 +197,7 @@ lv_obj_t* create(void* uiManager) {
     lv_obj_t* lblBack = lv_label_create(btnBack);
     lv_label_set_text(lblBack, LV_SYMBOL_LEFT " Back");
     lv_obj_set_style_text_font(lblBack, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lblBack, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(lblBack);
 
     return screen;

@@ -157,10 +157,10 @@
 #define WAKE_WORD_ENABLED       true   // Edge Impulse model integrated
 #define WAKE_WORD_THRESHOLD     0.35   // 0.0 - 1.0, VERY LOW for testing (raised back up after confirming detection)
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
-#define DEBUG_WAKE_WORD         1      // Enable verbose wake word logging
+#define DEBUG_WAKE_WORD         true   // Enable verbose wake word logging
 
 // Voice command recognition
-#define VOICE_COMMANDS_ENABLED  false  // Set true when keyword spotting model ready
+#define VOICE_COMMANDS_ENABLED  true   // Set true when keyword spotting model ready
 #define COMMAND_THRESHOLD       0.8    // 0.0 - 1.0, higher = stricter
 
 // Command listening timeout
