@@ -186,7 +186,10 @@ With debug enabled (`DEBUG_WAKE_WORD` in config.h), you'll see:
 4. Microphone physically blocked
 
 **Solutions:**
-1. Lower the threshold in `config.h`: `WAKE_WORD_THRESHOLD 0.25`
+1. Lower the threshold in `config.h`:
+   ```cpp
+   #define WAKE_WORD_THRESHOLD     0.25   // Reduce from 0.35
+   ```
 2. Move closer to device (0.5-1m)
 3. Reduce background noise
 4. Check microphone is not covered
@@ -271,7 +274,7 @@ Currently disabled (breaks audio in testing)
 
 ## Change Log
 
-### 2024-01-04
+### January 2024
 - Initial fix: Increased microphone gain to 30dB
 - Adjusted ADC scale register to 0x44
 - Created this documentation
