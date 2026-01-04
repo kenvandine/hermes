@@ -271,7 +271,7 @@ Currently disabled (breaks audio in testing)
 
 ## Change Log
 
-### 2026-01-04
+### 2024-01-04
 - Initial fix: Increased microphone gain to 30dB
 - Adjusted ADC scale register to 0x44
 - Created this documentation
