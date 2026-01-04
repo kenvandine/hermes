@@ -1,31 +1,50 @@
 # Microphone Volume Fix for Wake Word Detection
 
 ## Problem
-The ESP32-S3 with ES8311 audio codec was initializing the microphone correctly, but the volume was too low to reliably detect the "Hey Hermes" wake word. This resulted in poor wake word detection performance even when speaking at normal volume.
+The ESP32-S3 with ES8311 audio codec was initializing the microphone, but recordings were completely silent (-91dB). This prevented reliable detection of the "Hey Hermes" wake word.
 
 ## Root Cause Analysis
 
-The issue was caused by two conservative settings in the ES8311 codec configuration:
+The issue was caused by **incomplete analog power-up** in the ES8311 codec configuration:
 
-1. **Microphone Gain**: Set to 24dB which was insufficient for wake word detection
-2. **ADC Scale**: Register REG16 was set to 0x24, limiting the input dynamic range
+1. **PGA Not Powered (Critical Issue)**: Register REG0D was set to `0x01`, which only powered up the ADC but not the PGA (Programmable Gain Amplifier). Without the PGA powered, no audio signal from the microphone could reach the ADC.
+
+2. **Insufficient Gain**: Microphone gain was set to 24dB which was too low for wake word detection at normal speaking distances.
+
+3. **Conservative ADC Scale**: Register REG16 was set to `0x24`, limiting the input dynamic range.
 
 ## Solution
 
 ### Changes Made
 
-#### 1. Increased Microphone Gain (ES8311.cpp line 69)
+#### 1. Fixed PGA Power-Up (ES8311.cpp line 115) - **CRITICAL FIX**
 ```cpp
 // Before:
-setMicGain(GAIN_24DB);      // 24dB microphone gain (higher values break audio)
+writeReg(ES8311_REG0D, 0x01);  // Power up ADC analog only
 
 // After:
-setMicGain(GAIN_30DB);      // 30dB microphone gain for better wake word detection
+writeReg(ES8311_REG0D, 0x11);  // Power up ADC analog and PGA (bit 4 + bit 0)
 ```
 
-**Impact**: 6dB increase doubles the microphone sensitivity, providing better signal levels for the Edge Impulse wake word model without introducing distortion.
+**Impact**: This enables the analog input path, allowing microphone signals to be amplified and digitized. Without this, all recordings are silent regardless of gain settings.
 
-#### 2. Adjusted ADC Scale (ES8311.cpp line 123)
+**Technical Details**: 
+- Bit 0 (0x01): Powers up ADC analog
+- Bit 4 (0x10): Powers up PGA
+- Combined (0x11): Both ADC and PGA operational
+
+#### 2. Increased Microphone Gain (ES8311.cpp line 69)
+```cpp
+// Before:
+setMicGain(GAIN_24DB);
+
+// After:
+setMicGain(GAIN_30DB);
+```
+
+**Impact**: 6dB increase doubles the microphone sensitivity, providing better signal levels for the Edge Impulse wake word model.
+
+#### 3. Adjusted ADC Scale (ES8311.cpp line 123)
 ```cpp
 // Before:
 writeReg(ES8311_REG16, 0x24);  // ADC scale (stable value)
@@ -38,13 +57,30 @@ writeReg(ES8311_REG16, 0x44);  // ADC scale - increased for better sensitivity
 
 ## Technical Details
 
+### ES8311 Analog Power Configuration
+
+**Critical Finding**: The PGA (Programmable Gain Amplifier) must be explicitly powered up for any audio to be captured:
+
+**REG0D (0x0D) - ADC Analog Power Control:**
+- Bit 0 (0x01): Powers up ADC analog circuitry
+- Bit 4 (0x10): Powers up PGA circuitry  
+- **Required value: 0x11** (both bits set)
+- Previous value 0x01 left PGA unpowered, resulting in silent recordings
+
+**REG0E (0x0E) - PGA Control:**
+- Bits [7:4]: PGA gain setting (0000=0dB to 0111=42dB in 6dB steps)
+- Bits [1:0]: Input selection (00=differential input 1, 01=differential input 2, etc.)
+- Bit 2: Should be set for proper operation
+- Current value: 0x02 for differential microphone input
+
 ### ES8311 Codec Gain Stages
 
 The ES8311 has multiple gain stages that affect the final microphone signal:
 
 1. **PGA (Programmable Gain Amplifier)**: 0dB to 42dB in 6dB steps
-   - Controlled via REG0E register
-   - We increased from 24dB to 30dB
+   - Controlled via REG0E register (upper 4 bits)
+   - We increased from 24dB (0x40) to 30dB (0x50)
+   - Must be powered via REG0D bit 4
    
 2. **ADC Scale**: Controls the input range to the ADC
    - Controlled via REG16 register
@@ -274,7 +310,12 @@ Currently disabled (breaks audio in testing)
 
 ## Change Log
 
-### January 2024
-- Initial fix: Increased microphone gain to 30dB
+### January 2024 - Update 2
+- **Critical fix**: Powered up PGA (REG0D = 0x11) - resolves silent recordings
+- Added REG0D verification to diagnostic output
+- Updated documentation with PGA power-up details
+
+### January 2024 - Initial
+- Increased microphone gain to 30dB
 - Adjusted ADC scale register to 0x44
-- Created this documentation
+- Created initial documentation

@@ -74,11 +74,12 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     // Verify critical ADC registers
     Serial.println("[ES8311] Verifying ADC configuration:");
     Serial.printf("  REG02 (CLK_SRC): 0x%02X (expect 0x00 for MCLK)\n", readReg(ES8311_REG02));
+    Serial.printf("  REG0D (ADC_PWR): 0x%02X (expect 0x11 for ADC+PGA powered)\n", readReg(ES8311_REG0D));
+    Serial.printf("  REG0E (PGA_GAIN): 0x%02X\n", readReg(ES8311_REG0E));
     Serial.printf("  REG14 (MIC_BIAS): 0x%02X\n", readReg(ES8311_REG14));
     Serial.printf("  REG16 (ADC_SCALE): 0x%02X\n", readReg(ES8311_REG16));
     Serial.printf("  REG17 (ADC_PDN): 0x%02X (expect 0xBF for powered up)\n", readReg(ES8311_REG17));
     Serial.printf("  REG15 (ADC_MUTE): 0x%02X (expect 0x40 for unmuted)\n", readReg(ES8311_REG15));
-    Serial.printf("  REG0E (PGA_GAIN): 0x%02X\n", readReg(ES8311_REG0E));
 
     Serial.println("[ES8311] ✓ Codec initialized");
     return true;
@@ -112,8 +113,8 @@ void ES8311::configureADC() {
     delay(10);
 
     // Power up analog
-    writeReg(ES8311_REG0D, 0x01);  // Power up ADC analog
-    writeReg(ES8311_REG0E, 0x02);  // Enable analog PGA
+    writeReg(ES8311_REG0D, 0x11);  // Power up ADC analog and PGA (bit 4 + bit 0)
+    writeReg(ES8311_REG0E, 0x02);  // PGA input selection (differential input)
 
     // System configuration
     writeReg(ES8311_REG12, 0x00);  // System config
