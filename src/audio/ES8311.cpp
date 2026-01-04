@@ -66,7 +66,7 @@ bool ES8311::begin(int i2c_sda, int i2c_scl, uint32_t sample_rate) {
     writeReg(ES8311_REG44, 0x58);  // Set internal reference signal (ADCL + DACR)
 
     // Set default gain and volume
-    setMicGain(GAIN_24DB);      // 24dB microphone gain (higher values break audio)
+    setMicGain(GAIN_30DB);      // 30dB microphone gain for better wake word detection
     setVolume(70);              // 70% speaker volume
     muteMic(false);             // Unmute microphone
     muteDAC(false);             // Unmute speaker
@@ -120,7 +120,7 @@ void ES8311::configureADC() {
     writeReg(ES8311_REG14, 0x1A);  // Microphone bias and DMIC config
 
     // ADC path configuration
-    writeReg(ES8311_REG16, 0x24);  // ADC scale (stable value)
+    writeReg(ES8311_REG16, 0x44);  // ADC scale - increased for better sensitivity (was 0x24)
     writeReg(ES8311_REG17, 0xBF);  // ADC enable/channel config
     writeReg(ES8311_REG15, 0x40);  // ADC mute control (unmuted)
 
