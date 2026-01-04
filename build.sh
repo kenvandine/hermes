@@ -57,6 +57,9 @@ echo "  Ollama:           $OLLAMA_HOST"
 echo "  Piper:            $PIPER_HOST"
 echo "  Home Assistant:   $HA_HOST"
 echo ""
+echo ""
+echo "PLATFORM:           $PLATFORM"
+echo ""
 echo "========================================"
 echo ""
 
@@ -88,10 +91,10 @@ TARGET="${1:-run}"
 
 if [ "$TARGET" = "upload" ]; then
     echo "Building and uploading to device..."
-    "$PIO" run --target upload
+    "$PIO" run -e "$PLATFORM" --target upload
 else
     echo "Building firmware..."
-    "$PIO" run
+    "$PIO" run -e "$PLATFORM"
 fi
 
 # Check if build was successful
