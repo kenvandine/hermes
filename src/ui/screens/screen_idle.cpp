@@ -22,18 +22,22 @@ static void deviceButtonCallback(lv_event_t* e) {
 // Settings button callback
 static void settingsButtonCallback(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
-    Serial.printf("[UI] Settings button event: %d\n", code);
+    Serial.printf("[UI] Settings button callback invoked! Event code: %d\n", code);
     
     if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
         UIManager* ui = (UIManager*)lv_event_get_user_data(e);
-        Serial.println("[UI] Settings button pressed");
+        Serial.println("[UI] Settings button pressed - attempting to show settings");
         if (ui) {
+            Serial.println("[UI] UIManager pointer valid, calling showSettings()");
             ui->showSettings();
+        } else {
+            Serial.println("[UI] ERROR: UIManager pointer is NULL!");
         }
     }
 }
 
 lv_obj_t* ScreenIdle::create(void* uiManager) {
+    Serial.printf("[UI] ScreenIdle::create called with uiManager=%p\n", uiManager);
     lv_obj_t* screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(UI_COLOR_BACKGROUND), 0);
     lv_obj_set_user_data(screen, uiManager);
@@ -91,6 +95,7 @@ lv_obj_t* ScreenIdle::create(void* uiManager) {
     lv_obj_move_foreground(footer);  // Ensure footer is on top
 
     // Settings button
+    Serial.printf("[UI] Creating Settings button with uiManager=%p\n", uiManager);
     lv_obj_t* btnSettings = lv_btn_create(footer);
     lv_obj_set_size(btnSettings, 120, 50);
     lv_obj_align(btnSettings, LV_ALIGN_LEFT_MID, 0, 0);
@@ -98,8 +103,11 @@ lv_obj_t* ScreenIdle::create(void* uiManager) {
     lv_obj_clear_flag(btnSettings, LV_OBJ_FLAG_SCROLLABLE);  // Ensure button doesn't scroll
     lv_obj_add_flag(btnSettings, LV_OBJ_FLAG_CLICKABLE);  // Explicitly make clickable
     lv_obj_move_foreground(btnSettings);  // Bring to front
+    
+    Serial.println("[UI] Adding event callbacks to Settings button");
     lv_obj_add_event_cb(btnSettings, settingsButtonCallback, LV_EVENT_CLICKED, uiManager);
     lv_obj_add_event_cb(btnSettings, settingsButtonCallback, LV_EVENT_PRESSED, uiManager);  // Also try PRESSED
+    Serial.printf("[UI] Settings button created at %p\n", btnSettings);
 
     lv_obj_t* lblSettings = lv_label_create(btnSettings);
     lv_label_set_text(lblSettings, LV_SYMBOL_SETTINGS " Settings");
@@ -114,6 +122,7 @@ lv_obj_t* ScreenIdle::create(void* uiManager) {
     lv_obj_align(lblStatus, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_user_data(lblStatus, (void*)TAG_STATUS_BAR);
 
+    Serial.printf("[UI] ScreenIdle::create complete - returning screen=%p\n", screen);
     return screen;
 }
 
