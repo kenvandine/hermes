@@ -174,6 +174,12 @@ AudioMode AudioPipeline::getMode() const {
 }
 
 void AudioPipeline::process() {
+    static bool debugPrinted = false;
+    if (!debugPrinted) {
+        Serial.printf("[AudioPipeline] process() - initialized=%d, mode=%d\n", initialized, (int)mode);
+        debugPrinted = true;
+    }
+
     if (!initialized) {
         return;
     }
@@ -303,6 +309,13 @@ void AudioPipeline::getStats(uint32_t& txPackets, uint32_t& rxPackets, uint32_t&
 // ============================================================================
 
 void AudioPipeline::processIdle() {
+    static bool debugPrinted = false;
+    if (!debugPrinted) {
+        Serial.printf("[AudioPipeline] processIdle() - wakeWordEnabled=%d, wakeWord=%p, isEnabled=%d\n",
+                      wakeWordEnabled, wakeWord, wakeWord ? wakeWord->isEnabled() : 0);
+        debugPrinted = true;
+    }
+
     // In idle mode, run wake word detection if enabled
     if (wakeWordEnabled && wakeWord && wakeWord->isEnabled()) {
         // Read from microphone
