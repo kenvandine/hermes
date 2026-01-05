@@ -259,6 +259,13 @@ size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
 }
 
 size_t HALAudioNabuCasa::writeSpeaker(const int16_t* buffer, size_t sampleCount) {
+    // Debug: Log function entry (first 5 calls)
+    static int callCount = 0;
+    if (callCount++ < 5) {
+        Serial.printf("[HAL-Audio-NabuCasa] writeSpeaker() call #%d: speakerReady=%d, buffer=%p, sampleCount=%d\n",
+                      callCount, speakerReady_, buffer, sampleCount);
+    }
+
     if (!speakerReady_ || !buffer || sampleCount == 0) {
         return 0;
     }
@@ -267,6 +274,9 @@ size_t HALAudioNabuCasa::writeSpeaker(const int16_t* buffer, size_t sampleCount)
     size_t stereoSamples = sampleCount * 2;  // Stereo
     int32_t* tempBuffer = (int32_t*)malloc(stereoSamples * sizeof(int32_t));
     if (!tempBuffer) {
+        if (callCount <= 5) {
+            Serial.println("[HAL-Audio-NabuCasa] malloc failed for speaker tempBuffer!");
+        }
         return 0;
     }
 
@@ -277,9 +287,20 @@ size_t HALAudioNabuCasa::writeSpeaker(const int16_t* buffer, size_t sampleCount)
         tempBuffer[i * 2 + 1] = sample;  // Right channel (same as left)
     }
 
+    if (callCount <= 5) {
+        Serial.printf("[HAL-Audio-NabuCasa] About to call i2s_write, bytesToWrite=%d\n",
+                      stereoSamples * sizeof(int32_t));
+    }
+
     size_t bytesWritten = 0;
+    // Use 100ms timeout instead of portMAX_DELAY to avoid blocking forever
     esp_err_t err = i2s_write(I2S_NUM_1, tempBuffer, stereoSamples * sizeof(int32_t),
-                              &bytesWritten, portMAX_DELAY);
+                              &bytesWritten, pdMS_TO_TICKS(100));
+
+    if (callCount <= 5) {
+        Serial.printf("[HAL-Audio-NabuCasa] i2s_write returned: err=%d, bytesWritten=%d\n",
+                      err, bytesWritten);
+    }
 
     free(tempBuffer);
 
