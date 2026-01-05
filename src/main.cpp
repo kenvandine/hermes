@@ -842,7 +842,8 @@ void setupAI() {
     Serial.println("[AI] ✓ TTS engine initialized");
 
     // Create AI manager
-    if (!ollamaClient || !ttsEngine || !uiManager || !mqttClient || !stateMachine) {
+    // Note: uiManager is optional for LED-only devices (Nabu Casa)
+    if (!ollamaClient || !ttsEngine || !mqttClient || !stateMachine) {
         Serial.println("[AI] ✗ Missing dependencies for AI manager");
         return;
     }
