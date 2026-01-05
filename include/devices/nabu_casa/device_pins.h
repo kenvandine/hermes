@@ -40,7 +40,7 @@
 // LED Ring Pins (WS2812B - 12 RGB LEDs)
 // ============================================================================
 
-#define PIN_LED_RING_DATA       46      // LED data pin (WS2812B)
+#define PIN_LED_RING_DATA       21      // LED data pin (WS2812B) - Correct per ESPHome
 #define PIN_LED_RING_POWER      45      // LED power supply enable
 
 // ============================================================================
