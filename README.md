@@ -9,16 +9,22 @@ A voice-activated, AI-enhanced multi-room intercom system built on ESP32-S3 with
 
 - **AI Assistant**: Ollama LLM integration with Piper TTS for natural language queries
 - **Voice Control**: Wake word detection ("Hey Hermes") with voice commands
+- **Home Assistant Voice Control**: Control lights, switches, climate, and devices via voice
 - **Multi-Room Communication**: Drop in on any room in your house
-- **Touch Screen UI**: 1.8" AMOLED display (368×448) with capacitive touch
-- **Home Assistant Integration**: Full MQTT Discovery, automation triggers, and dashboard controls
+- **Multiple Device Support**:
+  - Waveshare: 1.8" AMOLED touchscreen UI (368×448)
+  - Nabu Casa: 12-LED ring visual feedback with physical controls
+- **Home Assistant Integration**: Full MQTT Discovery, voice control API, automation triggers, and dashboard controls
 - **Low Latency Audio**: Opus codec over UDP for real-time communication
-- **Hands-Free Operation**: Complete call lifecycle via voice or touch
-- **Compact Design**: All-in-one board with integrated display and touch
+- **Hands-Free Operation**: Complete call lifecycle via voice or physical controls
 
-## Hardware Requirements
+## Supported Hardware
 
-### Required Components
+HERMES supports multiple ESP32-S3 based devices:
+
+### Option 1: Waveshare ESP32-S3 1.8" AMOLED Touch
+
+**Required Components:**
 - **Waveshare ESP32-S3 1.8" AMOLED Touch Display** (368×448, RM67162 controller)
   - Includes: ESP32-S3-WROOM-1, AMOLED display, CST816S touch
   - Built-in: 16MB Flash, 8MB PSRAM, USB-C
@@ -27,10 +33,19 @@ A voice-activated, AI-enhanced multi-room intercom system built on ESP32-S3 with
 - **Speaker**: 4-8Ω, 3W (compact speaker recommended)
 - **Jumper wires**: For connecting audio components
 
-### Optional Components
+**Optional Components:**
 - 3.7V LiPo battery (for portable use)
 - Custom enclosure (45mm × 70mm × 20mm minimum)
 - Acoustic foam (for mic/speaker isolation)
+
+### Option 2: Nabu Casa Voice PE
+
+**All-in-one device** - no external components required!
+- **Built-in**: ESP32-S3, AIC3204 audio codec, XMOS USB audio processor
+- **Audio**: Integrated microphone and speaker
+- **Display**: 12-LED WS2812B ring for visual feedback
+- **Controls**: Rotary encoder, action button, hardware mute switch
+- **See**: [Nabu Casa Voice PE](https://www.home-assistant.io/voice-pe/)
 
 ## Software Requirements
 
@@ -47,16 +62,24 @@ A voice-activated, AI-enhanced multi-room intercom system built on ESP32-S3 with
 ```bash
 git clone https://github.com/kenvandine/hermes.git
 cd hermes
-pio run
+
+# Build for Waveshare (default)
+pio run -e waveshare
+
+# Or build for Nabu Casa Voice PE
+pio run -e nabu_casa
 ```
+
+See `BUILD.md` for detailed build instructions including configuration options.
 
 ### 2. Assemble Hardware
 
-Follow the comprehensive wiring guide in `docs/hardware_setup_waveshare_amoled.md`:
+**For Waveshare:** Follow the comprehensive wiring guide in `docs/hardware_setup_waveshare_amoled.md`:
 - Connect INMP441 microphone to GPIOs 1, 2, 42
 - Connect MAX98357A amplifier to GPIOs 3, 4, 5
 - Connect speaker to MAX98357A output
-- Pins are pre-configured in `include/config.h` for Waveshare ESP32-S3 1.8" AMOLED
+
+**For Nabu Casa:** No assembly required - all components are integrated!
 
 ### 3. First Boot Setup
 
@@ -150,23 +173,38 @@ entities:
 
 ## Voice Commands
 
-- **"Hey Hermes"** - Wake word to activate listening
-- **"Drop in on [Room Name]"** - Initiate call to room
-- **"Call [Room Name]"** - Initiate call to room
-- **"Hang up"** - End active call
-- **"Cancel"** - Cancel command listening
-- **"Ask [question]"** - Query the AI assistant
+After saying **"Hey Hermes"**, you can:
 
-## AI Assistant Examples
+### Device Control (Home Assistant)
+Control devices in your Home Assistant instance:
+- "Turn on kitchen light"
+- "Turn off living room lamp"
+- "Set bedroom temperature to 72"
+- "Dim bathroom lights to 50%"
+- "Open garage door"
+- "Lock front door"
 
-After wake word detection:
-- "Ask what's the weather like?"
-- "Ask what time is it?"
-- "Ask tell me a joke"
+### Intercom
+Multi-room voice communication:
+- "Drop in on [Room Name]" - Start call to room
+- "Call [Room Name]" - Start call to room
+- "Hang up" - End active call
+
+### AI Assistant (Ollama)
+Ask questions and get spoken responses:
+- "What's the weather like?"
+- "What time is it?"
+- "Tell me a joke"
+- "Explain quantum physics"
+
+### Control
+- "Cancel" - Stop listening
+
+**Note:** The system automatically routes device control commands to Home Assistant and questions to the Ollama AI assistant. See `BUILD.md` for Home Assistant configuration instructions.
 
 Responses are delivered via:
 - Text-to-speech (Piper TTS)
-- On-screen display
+- On-screen display (Waveshare) or LED ring (Nabu Casa)
 - MQTT to Home Assistant
 
 ## Pin Configuration

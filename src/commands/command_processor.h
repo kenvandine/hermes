@@ -14,6 +14,7 @@ enum class VoiceCommand {
     HANG_UP,        // "Hang up"
     CANCEL,         // "Cancel"
     ASK_AI,         // "Ask [QUERY]" - AI assistant query
+    HA_CONTROL,     // Home Assistant device control
     UNKNOWN         // Command detected but not understood
 };
 
@@ -26,6 +27,7 @@ struct CommandResult {
     VoiceCommand command;
     String targetRoom;      // For DROP_IN/CALL commands
     String aiQuery;         // For ASK_AI command
+    String haCommand;       // For HA_CONTROL command
     float confidence;       // 0.0-1.0
     String rawText;         // Raw recognized text (if available)
 
@@ -33,12 +35,17 @@ struct CommandResult {
         : command(VoiceCommand::NONE),
           targetRoom(""),
           aiQuery(""),
+          haCommand(""),
           confidence(0.0f),
           rawText("") {}
 
     bool isValid() const {
         return command != VoiceCommand::NONE && command != VoiceCommand::UNKNOWN;
     }
+
+    // Helper methods for command type checking
+    bool isDeviceControl() const { return command == VoiceCommand::HA_CONTROL; }
+    bool isAIQuery() const { return command == VoiceCommand::ASK_AI; }
 
     String toString() const {
         switch (command) {
@@ -52,6 +59,8 @@ struct CommandResult {
                 return "CANCEL";
             case VoiceCommand::ASK_AI:
                 return "ASK_AI: " + aiQuery;
+            case VoiceCommand::HA_CONTROL:
+                return "HA_CONTROL: " + haCommand;
             case VoiceCommand::UNKNOWN:
                 return "UNKNOWN";
             default:
@@ -167,6 +176,13 @@ private:
     bool matchRoom(const String& keyword, String& matchedRoom);
     VoiceCommand parseCommandKeyword(const String& keyword);
     float calculateCombinedConfidence() const;
+
+    /**
+     * Classify command text as HA_CONTROL or ASK_AI
+     * @param text Command text to classify
+     * @return Classified VoiceCommand type
+     */
+    VoiceCommand classifyCommand(const String& text);
 };
 
 #endif // COMMAND_PROCESSOR_H

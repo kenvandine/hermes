@@ -56,6 +56,7 @@
 #include "ai/ollama_client.h"
 #include "ai/tts_engine.h"
 #include "ai/ai_manager.h"
+#include "homeassistant/ha_conversation.h"
 #endif
 
 // HAL Components (multi-device support)
@@ -94,6 +95,7 @@ UIManager* uiManager = nullptr;
 OllamaClient* ollamaClient = nullptr;
 TTSEngine* ttsEngine = nullptr;
 AIManager* aiManager = nullptr;
+HAConversation* haConversation = nullptr;
 #endif
 
 // HAL: Hardware Abstraction Layer
@@ -124,6 +126,7 @@ void setupCallManager();
 #ifndef DISABLE_AUDIO_TEMP
 void setupVoiceCommands();
 void setupAI();
+void processHACommand(const String& command);
 #endif
 void printSystemInfo();
 
@@ -797,6 +800,20 @@ void setupVoiceCommands() {
                         }
                         break;
 
+                    case VoiceCommand::HA_CONTROL:
+                        // Send to Home Assistant
+                        if (haConversation && !result.haCommand.isEmpty()) {
+                            Serial.printf("[VoiceCommands] HA Command: %s\n", result.haCommand.c_str());
+                            processHACommand(result.haCommand);
+                        } else {
+                            Serial.println("[VoiceCommands] ✗ HA conversation not available");
+                            // Fall back to speaking error
+                            if (ttsEngine) {
+                                ttsEngine->speak("Home Assistant is not connected");
+                            }
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -808,6 +825,54 @@ void setupVoiceCommands() {
 
     Serial.println("[VoiceCommands] ✓ Voice command system initialized");
 }
+
+#ifndef DISABLE_AUDIO_TEMP
+void processHACommand(const String& command) {
+    if (!haConversation) {
+        Serial.println("[HA] No conversation client available");
+        return;
+    }
+
+    // Transition to AI_QUERY state (reuse for HA queries)
+    if (stateMachine) {
+        stateMachine->setState(AppState::AI_QUERY);
+    }
+
+    Serial.printf("[HA] Processing command: %s\n", command.c_str());
+
+    // Send to Home Assistant
+    HAConversation::Response response = haConversation->process(command);
+
+    if (response.success) {
+        Serial.printf("[HA] ✓ Success: %s\n", response.speech.c_str());
+
+        // Publish to MQTT for HA dashboard
+        if (mqttClient) {
+            mqttClient->publishAIQuery(command);
+            mqttClient->publishAIResponse(command, response.speech, 0);
+        }
+
+        // Speak the response
+        if (ttsEngine) {
+            stateMachine->setState(AppState::AI_RESPONSE);
+            ttsEngine->speak(response.speech);
+        }
+    } else {
+        Serial.printf("[HA] ✗ Error: %s\n", response.error.c_str());
+
+        // Speak error
+        if (ttsEngine) {
+            String errorMsg = "Sorry, I couldn't " + command;
+            ttsEngine->speak(errorMsg);
+        }
+    }
+
+    // Return to idle after response
+    if (stateMachine) {
+        stateMachine->setState(AppState::IDLE);
+    }
+}
+#endif
 
 void setupAI() {
     Serial.println("[AI] Initializing AI assistant system...");
@@ -840,6 +905,24 @@ void setupAI() {
     }
     ttsEngine->setSpeed(TTS_SPEED);
     Serial.println("[AI] ✓ TTS engine initialized");
+
+    // Initialize Home Assistant Conversation API
+    Serial.println("[HA] Initializing Home Assistant conversation...");
+    haConversation = new HAConversation();
+    if (!haConversation->begin(HA_HOST, HA_TOKEN)) {
+        Serial.println("[HA] ✗ Failed to initialize HA conversation");
+        delete haConversation;
+        haConversation = nullptr;
+    } else {
+        Serial.println("[HA] ✓ HA conversation initialized");
+
+        // Test connection
+        if (haConversation->testConnection()) {
+            Serial.println("[HA] ✓ Connection to HA API verified");
+        } else {
+            Serial.println("[HA] ⚠ HA API connection test failed");
+        }
+    }
 
     // Create AI manager
     // Note: uiManager is optional for LED-only devices (Nabu Casa)

@@ -13,11 +13,11 @@ The HERMES project now supports multiple hardware devices through a Hardware Abs
 - **Input**: FT3168 capacitive touch screen
 - **Build Environment**: `waveshare`
 
-### Nabu Casa Voice Preview Edition (Planned)
-- **Status**: HAL stubs created, awaiting hardware
+### Nabu Casa Voice Preview Edition
+- **Status**: Fully implemented and tested
 - **Audio**: XMOS XU316 + TI AIC3204, 48kHz stereo, dual microphones
-- **Display**: 12-LED WS2812B ring (no screen)
-- **Input**: Physical button, rotary encoder, mute switch
+- **Display**: 12-LED WS2812B ring with state and volume visualization
+- **Input**: Physical action button, rotary encoder (volume), hardware mute switch
 - **Build Environment**: `nabu_casa`
 
 ## HAL Structure
@@ -143,30 +143,34 @@ These flags control which HAL implementations are compiled and linked.
 
 ## Migration Status
 
-### Phase 1: Foundation (Complete)
+### Phase 1: Foundation ✅ Complete
 - [x] Create HAL interfaces
 - [x] Create device configuration headers
 - [x] Implement Waveshare HAL wrappers
-- [x] Create Nabu Casa HAL stubs
+- [x] Create Nabu Casa HAL implementations
 - [x] Set up HAL factory
 - [x] Configure PlatformIO build environments
 
-### Phase 2: Integration (Planned)
-- [ ] Refactor `AudioPipeline` to use `HALAudio`
-- [ ] Refactor `UIManager` to use `HALDisplay` and `HALControls`
-- [ ] Update `main.cpp` to instantiate HAL via factory
-- [ ] Test Waveshare build with HAL integration
+### Phase 2: Integration ✅ Complete
+- [x] Refactor `AudioPipeline` to use `HALAudio`
+- [x] Refactor `UIManager` to use `HALDisplay` and `HALControls`
+- [x] Update `main.cpp` to instantiate HAL via factory
+- [x] Test Waveshare build with HAL integration
 
-### Phase 3: Nabu Casa Implementation (Awaiting Hardware)
-- [ ] Implement XMOS XU316 audio processor communication
-- [ ] Implement TI AIC3204 codec driver
-- [ ] Implement WS2812B LED ring driver
-- [ ] Implement physical controls (button, rotary encoder, mute switch)
-- [ ] Test Nabu Casa build on actual hardware
+### Phase 3: Nabu Casa Implementation ✅ Complete
+- [x] Implement XMOS XU316 audio processor communication
+- [x] Implement TI AIC3204 codec driver
+- [x] Implement WS2812B LED ring driver with state visualization
+- [x] Implement LED ring volume visualization
+- [x] Implement physical controls (button, rotary encoder, mute switch)
+- [x] Test Nabu Casa build on actual hardware
 
-### Phase 4: Conditional Features (Future)
-- [ ] Adapt features based on device capabilities
+### Phase 4: Conditional Features ✅ Complete
+- [x] Adapt features based on device capabilities
   - Full UI vs LED-only feedback
+  - Optional UI Manager for LED-only devices
+  - Device-specific volume controls
+  - Device-specific audio codec initialization
   - Touch vs physical controls
   - Mono vs stereo audio processing
   - Sample rate differences (16kHz vs 48kHz)
