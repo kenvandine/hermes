@@ -181,7 +181,18 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
 }
 
 size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
+    // Debug: Log function entry (first 5 calls)
+    static int callCount = 0;
+    if (callCount++ < 5) {
+        Serial.printf("[HAL-Audio-NabuCasa] readMicrophone() call #%d: micReady=%d, buffer=%p, sampleCount=%d\n",
+                      callCount, micReady_, buffer, sampleCount);
+    }
+
     if (!micReady_ || !buffer || sampleCount == 0) {
+        if (callCount <= 5) {
+            Serial.printf("[HAL-Audio-NabuCasa] Early return: micReady=%d, buffer=%p, sampleCount=%d\n",
+                          micReady_, buffer, sampleCount);
+        }
         return 0;
     }
 
@@ -190,6 +201,9 @@ size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
     size_t bytesToRead = sampleCount * sizeof(int32_t) * 2;  // Stereo 32-bit
     int32_t* tempBuffer = (int32_t*)malloc(bytesToRead);
     if (!tempBuffer) {
+        if (callCount <= 5) {
+            Serial.println("[HAL-Audio-NabuCasa] malloc failed for tempBuffer!");
+        }
         return 0;
     }
 
