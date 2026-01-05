@@ -1116,7 +1116,12 @@ void onStateChanged(AppState oldState, AppState newState) {
     }
 #endif
 
-    // Phase 7: Update UI based on state
+    // Phase 7: Update LED ring immediately
+    if (halDisplay) {
+        halDisplay->showState(newState);
+    }
+
+    // Update UI manager (for devices with full display)
     if (uiManager) {
         uiManager->onStateChanged(oldState, newState);
     }
