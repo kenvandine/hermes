@@ -61,6 +61,7 @@
 // HAL Components (multi-device support)
 #include "hal/hal_factory.h"
 #include "hal/display/hal_display_waveshare.h"  // For getDisplayDriver()
+#include "hal/hal_controls.h"
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -95,6 +96,7 @@ AIManager* aiManager = nullptr;
 // HAL: Hardware Abstraction Layer
 std::unique_ptr<HALAudio> halAudio = nullptr;
 std::unique_ptr<HALDisplay> halDisplay = nullptr;
+std::unique_ptr<HALControls> halControls = nullptr;
 
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
@@ -232,15 +234,17 @@ void testSpeakerTone() {
     const int TONE_FREQUENCY = 440;      // Hz (A4 note)
     const int SAMPLE_RATE = 48000;       // Speaker rate for Nabu Casa
     const int TONE_DURATION_MS = 1000;   // 1 second
-    const int AMPLITUDE = 8000;          // Moderate volume
+    const int AMPLITUDE = 20000;         // High volume for testing
 
     const int samplesPerCycle = SAMPLE_RATE / TONE_FREQUENCY;
     const int totalSamples = (SAMPLE_RATE * TONE_DURATION_MS) / 1000;
 
     int16_t audioBuffer[512];
     int sampleIndex = 0;
+    size_t totalWritten = 0;
 
-    Serial.println("[TEST] Generating 440Hz tone for 1 second...");
+    Serial.printf("[TEST] Generating 440Hz tone: %d samples, amplitude=%d\n",
+                  totalSamples, AMPLITUDE);
 
     while (sampleIndex < totalSamples) {
         int bufferSize = (totalSamples - sampleIndex > 512) ? 512 : (totalSamples - sampleIndex);
@@ -251,11 +255,12 @@ void testSpeakerTone() {
         }
 
         if (halAudio) {
-            halAudio->writeSpeaker(audioBuffer, bufferSize);
+            size_t written = halAudio->writeSpeaker(audioBuffer, bufferSize);
+            totalWritten += written;
         }
     }
 
-    Serial.println("[TEST] ✓ Tone test complete");
+    Serial.printf("[TEST] ✓ Tone complete - wrote %d samples\n", totalWritten);
 }
 
 // ============================================================================
@@ -530,6 +535,34 @@ void setupDisplay() {
     } else {
         Serial.println("[DISPLAY] ✓ Display HAL initialized (LED ring mode, no UI)");
         // For LED-only devices, state changes will be shown via LED patterns
+    }
+
+    // Initialize controls HAL (physical buttons, rotary encoder, etc.)
+    Serial.println("[CONTROLS] Initializing controls subsystem...");
+    halControls = HALFactory::createControls();
+
+    if (!halControls) {
+        Serial.println("[CONTROLS] ✗ Failed to create controls HAL!");
+    } else if (!halControls->begin()) {
+        Serial.println("[CONTROLS] ✗ Failed to initialize controls HAL!");
+        halControls.reset();
+    } else {
+        Serial.println("[CONTROLS] ✓ Controls HAL initialized successfully");
+
+        // Register control event callback
+        halControls->registerCallback([](const ControlEventData& event) {
+            if (event.event == ControlEvent::VOLUME_SET && audioPipeline) {
+                // Rotary encoder volume control
+                audioPipeline->setVolume(event.value);
+                Serial.printf("[CONTROLS] Volume: %d%%\n", event.value);
+            }
+            else if (event.event == ControlEvent::MUTE_TOGGLE && audioPipeline) {
+                // Button mute toggle (will be implemented in next task)
+                bool muted = (event.value == 1);
+                audioPipeline->mute(muted);
+                Serial.printf("[CONTROLS] %s\n", muted ? "Muted" : "Unmuted");
+            }
+        });
     }
 
     // Create UI/Display task (for both LVGL UI and LED ring animations)
@@ -844,6 +877,12 @@ void uiTask(void* parameter) {
         while (true) {
             // Update LVGL display and handle touch input
             uiManager->update();
+
+            // Update controls (button debouncing via OneButton)
+            if (halControls) {
+                halControls->update();
+            }
+
             delay(1000 / UI_UPDATE_RATE_HZ);
         }
     } else {
@@ -851,6 +890,12 @@ void uiTask(void* parameter) {
         while (true) {
             // Update LED ring animations
             halDisplay->update();
+
+            // Update controls (button debouncing via OneButton, rotary encoder)
+            if (halControls) {
+                halControls->update();
+            }
+
             delay(1000 / UI_UPDATE_RATE_HZ);  // 30 FPS for smooth animations
         }
     }

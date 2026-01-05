@@ -20,6 +20,65 @@
 // AIC3204 I2C address
 #define AIC3204_I2C_ADDR    0x18
 
+// AIC3204 Register Definitions
+// Page 0 Registers
+#define AIC3204_PAGE_CTRL       0x00    // Page Control Register
+#define AIC3204_SW_RST          0x01    // Software Reset
+#define AIC3204_CLK_PLL1        0x04    // Clock Setting Register 1
+#define AIC3204_CLK_PLL2        0x05    // Clock Setting Register 2, P and R values
+#define AIC3204_CLK_PLL3        0x06    // Clock Setting Register 3, J values
+#define AIC3204_NDAC            0x0B    // NDAC Divider Value
+#define AIC3204_MDAC            0x0C    // MDAC Divider Value
+#define AIC3204_DOSR            0x0E    // DOSR Divider Value (OSR for DAC)
+#define AIC3204_NADC            0x12    // NADC Divider Value
+#define AIC3204_MADC            0x13    // MADC Divider Value
+#define AIC3204_AOSR            0x14    // AOSR Divider Value (OSR for ADC)
+#define AIC3204_CODEC_IF        0x1B    // CODEC Interface Control
+#define AIC3204_AUDIO_IF_4      0x1F    // Audio Interface Setting Register 4
+#define AIC3204_AUDIO_IF_5      0x20    // Audio Interface Setting Register 5
+#define AIC3204_SCLK_MFP3       0x38    // SCLK/MFP3 Function Control
+#define AIC3204_DAC_SIG_PROC    0x3C    // DAC Signal Processing Block Control
+#define AIC3204_ADC_SIG_PROC    0x3D    // ADC Signal Processing Block Control
+#define AIC3204_DAC_CH_SET1     0x3F    // DAC Channel Setup Register 1
+#define AIC3204_DAC_CH_SET2     0x40    // DAC Channel Setup Register 2
+#define AIC3204_DACL_VOL_D      0x41    // DAC Left Digital Volume Control
+#define AIC3204_DACR_VOL_D      0x42    // DAC Right Digital Volume Control
+
+// Page 1 Registers
+#define AIC3204_LDO_CTRL        0x01    // LDO Control Register
+#define AIC3204_PWR_CFG         0x02    // Power Configuration
+#define AIC3204_PLAY_CFG1       0x03    // Playback Configuration Register 1
+#define AIC3204_PLAY_CFG2       0x04    // Playback Configuration Register 2
+#define AIC3204_CM_CTRL         0x0A    // Common Mode Control
+#define AIC3204_HP_START        0x09    // Headphone Driver Startup Control
+#define AIC3204_HPL_ROUTE       0x0C    // HPL Routing Selection
+#define AIC3204_HPR_ROUTE       0x0D    // HPR Routing Selection
+#define AIC3204_LOL_ROUTE       0x0E    // LOL Routing Selection
+#define AIC3204_LOR_ROUTE       0x0F    // LOR Routing Selection
+#define AIC3204_HPL_GAIN        0x10    // HPL Gain
+#define AIC3204_HPR_GAIN        0x11    // HPR Gain
+#define AIC3204_LOL_DRV_GAIN    0x12    // LOL Driver Gain
+#define AIC3204_LOR_DRV_GAIN    0x13    // LOR Driver Gain
+#define AIC3204_OP_PWR_CTRL     0x09    // Output Driver Power Control
+#define AIC3204_REF_STARTUP     0x7B    // Reference Power Up Configuration
+
+// Helper functions for AIC3204 I2C communication
+static bool aic3204WriteReg(uint8_t reg, uint8_t value) {
+    Wire.beginTransmission(AIC3204_I2C_ADDR);
+    Wire.write(reg);
+    Wire.write(value);
+    uint8_t error = Wire.endTransmission();
+    if (error != 0) {
+        Serial.printf("[AIC3204] I2C write error %d (reg=0x%02X, val=0x%02X)\n", error, reg, value);
+        return false;
+    }
+    return true;
+}
+
+static bool aic3204SelectPage(uint8_t page) {
+    return aic3204WriteReg(AIC3204_PAGE_CTRL, page);
+}
+
 HALAudioNabuCasa::HALAudioNabuCasa()
     : sampleRate_(DEVICE_SAMPLE_RATE)
     , volume_(DEVICE_DEFAULT_SPEAKER_VOL)
@@ -192,6 +251,83 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
     i2s_zero_dma_buffer(I2S_NUM_1);
     i2s_start(I2S_NUM_1);
 
+    // Initialize AIC3204 codec via I2C
+    Serial.println("[HAL-Audio-NabuCasa] Initializing AIC3204 codec...");
+
+    // Page 0: Clock and digital settings
+    if (!aic3204SelectPage(0)) {
+        Serial.println("[HAL-Audio-NabuCasa] ✗ Failed to select AIC3204 page 0");
+        return false;
+    }
+
+    aic3204WriteReg(AIC3204_SW_RST, 0x01);       // Software reset
+    delay(10);
+
+    aic3204WriteReg(AIC3204_NDAC, 0x82);         // Power up NDAC, divider = 2
+    aic3204WriteReg(AIC3204_MDAC, 0x82);         // Power up MDAC, divider = 2
+    aic3204WriteReg(AIC3204_DOSR, 0x80);         // DOSR = 128
+    aic3204WriteReg(AIC3204_CODEC_IF, 0x30);     // I2S mode, 32-bit, DOUT always driving
+    aic3204WriteReg(AIC3204_SCLK_MFP3, 0x02);    // SCLK/MFP3 as audio data in
+    aic3204WriteReg(AIC3204_AUDIO_IF_4, 0x01);   // Audio interface setting 4
+    aic3204WriteReg(AIC3204_AUDIO_IF_5, 0x01);   // Audio interface setting 5
+    aic3204WriteReg(AIC3204_DAC_SIG_PROC, 0x01); // DAC processing block PRB_P1
+
+    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 0 configured (clock/digital)");
+
+    // Page 1: Analog configuration
+    if (!aic3204SelectPage(1)) {
+        Serial.println("[HAL-Audio-NabuCasa] ✗ Failed to select AIC3204 page 1");
+        return false;
+    }
+
+    aic3204WriteReg(AIC3204_LDO_CTRL, 0x09);     // Enable internal AVDD LDO
+    aic3204WriteReg(AIC3204_PWR_CFG, 0x08);      // Disable weak AVDD
+    aic3204WriteReg(AIC3204_LDO_CTRL, 0x01);     // Enable master analog power
+    aic3204WriteReg(AIC3204_CM_CTRL, 0x40);      // Common mode = 0.9V
+    aic3204WriteReg(AIC3204_PLAY_CFG1, 0x00);    // Playback config 1
+    aic3204WriteReg(AIC3204_PLAY_CFG2, 0x00);    // PowerTune PTM_P3/P4
+
+    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 1 configured (analog power)");
+
+    // Reference and output configuration
+    aic3204WriteReg(AIC3204_REF_STARTUP, 0x01);  // REF charging time = 40ms
+    delay(50);  // Wait for reference to charge
+
+    aic3204WriteReg(AIC3204_HP_START, 0x25);     // Headphone soft stepping
+
+    // Route DAC to outputs
+    aic3204WriteReg(AIC3204_HPL_ROUTE, 0x08);    // DAC_L routed to HPL
+    aic3204WriteReg(AIC3204_HPR_ROUTE, 0x08);    // DAC_R routed to HPR
+    aic3204WriteReg(AIC3204_LOL_ROUTE, 0x08);    // DAC_L routed to LOL
+    aic3204WriteReg(AIC3204_LOR_ROUTE, 0x08);    // DAC_R routed to LOR
+
+    // Set output gains - bit 7 is mute (0=unmuted), bits 6-0 are gain
+    aic3204WriteReg(AIC3204_HPL_GAIN, 0x00);     // HPL: Unmute, 0dB gain
+    aic3204WriteReg(AIC3204_HPR_GAIN, 0x00);     // HPR: Unmute, 0dB gain
+    aic3204WriteReg(AIC3204_LOL_DRV_GAIN, 0x00); // LOL: Unmute, 0dB gain
+    aic3204WriteReg(AIC3204_LOR_DRV_GAIN, 0x00); // LOR: Unmute, 0dB gain
+
+    // Power up output drivers
+    aic3204WriteReg(AIC3204_OP_PWR_CTRL, 0x3C);  // Power up HPL, HPR, LOL, LOR
+
+    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 1 configured (outputs/routing)");
+
+    // Wait for analog settling
+    delay(2500);
+
+    // Page 0: Power up DAC
+    if (!aic3204SelectPage(0)) {
+        Serial.println("[HAL-Audio-NabuCasa] ✗ Failed to select AIC3204 page 0");
+        return false;
+    }
+
+    aic3204WriteReg(AIC3204_DAC_CH_SET1, 0xD4);  // Power up left and right DAC channels
+    aic3204WriteReg(AIC3204_DAC_CH_SET2, 0x00);  // Unmute DAC channels (bit 3=L mute, bit 2=R mute)
+    aic3204WriteReg(AIC3204_DACL_VOL_D, 0x00);   // Left DAC digital volume = 0dB
+    aic3204WriteReg(AIC3204_DACR_VOL_D, 0x00);   // Right DAC digital volume = 0dB
+
+    Serial.println("[HAL-Audio-NabuCasa] ✓ AIC3204 codec initialized");
+
     speakerReady_ = true;
     Serial.println("[HAL-Audio-NabuCasa] ✓ Speaker initialized");
     return true;
@@ -330,8 +466,11 @@ size_t HALAudioNabuCasa::writeSpeaker(const int16_t* buffer, size_t sampleCount)
 void HALAudioNabuCasa::setVolume(uint8_t volume) {
     volume_ = volume;
 
-    // TODO: Send I2C commands to AIC3204 to set DAC volume
-    // For now, volume is controlled by XMOS processing
+    // NOTE: Cannot do I2C writes here because this is called from ISR context
+    // (rotary encoder interrupt). Hardware volume control would need to be
+    // applied from a non-ISR context using a flag/queue system.
+    // For now, just track the volume in software.
+
     Serial.printf("[HAL-Audio-NabuCasa] Volume set to %d%%\n", volume);
 }
 

@@ -35,9 +35,12 @@ private:
     volatile int volumeLevel_;       // Current volume (0-100)
     volatile int encoderPosition_;   // Raw encoder position
 
-    // Mute state
+    // Mute state (hardware mute switch on GPIO3)
     volatile bool muteState_;
     bool lastMuteState_;
+
+    // Button-based mute toggle (center button on GPIO0)
+    bool buttonMuteEnabled_;
 
     // OneButton for action button
     OneButton* actionButton_;

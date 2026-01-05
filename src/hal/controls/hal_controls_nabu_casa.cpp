@@ -22,6 +22,7 @@ HALControlsNabuCasa::HALControlsNabuCasa()
     , encoderPosition_(0)
     , muteState_(false)
     , lastMuteState_(false)
+    , buttonMuteEnabled_(false)
     , actionButton_(nullptr)
     , lastEncoded_(0) {
 
@@ -36,8 +37,8 @@ HALControlsNabuCasa::~HALControlsNabuCasa() {
     }
 
     // Detach interrupts
-    detachInterrupt(digitalPinToInterrupt(PIN_ROTARY_A));
-    detachInterrupt(digitalPinToInterrupt(PIN_ROTARY_B));
+    detachInterrupt(digitalPinToInterrupt(PIN_ROTARY_CLK));
+    detachInterrupt(digitalPinToInterrupt(PIN_ROTARY_DT));
     detachInterrupt(digitalPinToInterrupt(PIN_MUTE_SWITCH));
 
     instance_ = nullptr;
@@ -63,17 +64,17 @@ bool HALControlsNabuCasa::begin() {
     Serial.println("[HAL-Controls-NabuCasa] ✓ Action button configured");
 
     // Configure rotary encoder
-    pinMode(PIN_ROTARY_A, INPUT_PULLUP);
-    pinMode(PIN_ROTARY_B, INPUT_PULLUP);
+    pinMode(PIN_ROTARY_CLK, INPUT_PULLUP);
+    pinMode(PIN_ROTARY_DT, INPUT_PULLUP);
 
     // Read initial encoder state
-    uint8_t a = digitalRead(PIN_ROTARY_A);
-    uint8_t b = digitalRead(PIN_ROTARY_B);
+    uint8_t a = digitalRead(PIN_ROTARY_CLK);
+    uint8_t b = digitalRead(PIN_ROTARY_DT);
     lastEncoded_ = (a << 1) | b;
 
     // Attach encoder interrupts
-    attachInterrupt(digitalPinToInterrupt(PIN_ROTARY_A), handleRotaryA, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(PIN_ROTARY_B), handleRotaryB, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(PIN_ROTARY_CLK), handleRotaryA, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(PIN_ROTARY_DT), handleRotaryB, CHANGE);
 
     Serial.println("[HAL-Controls-NabuCasa] ✓ Rotary encoder configured");
 
@@ -139,10 +140,14 @@ void HALControlsNabuCasa::onButtonClick() {
         return;
     }
 
-    Serial.println("[HAL-Controls-NabuCasa] Button: Click");
+    // Toggle mute on single click
+    instance_->buttonMuteEnabled_ = !instance_->buttonMuteEnabled_;
 
-    // Single click = Accept call / Wake word trigger
-    ControlEventData event(ControlEvent::ACCEPT_CALL);
+    Serial.printf("[HAL-Controls-NabuCasa] Button: Click - Mute %s\n",
+                  instance_->buttonMuteEnabled_ ? "ON" : "OFF");
+
+    // Send mute toggle event
+    ControlEventData event(ControlEvent::MUTE_TOGGLE, instance_->buttonMuteEnabled_ ? 1 : 0);
     instance_->callback_(event);
 }
 
@@ -186,8 +191,8 @@ void IRAM_ATTR HALControlsNabuCasa::handleRotaryB() {
 
 void HALControlsNabuCasa::updateEncoder() {
     // Read current encoder state
-    uint8_t a = digitalRead(PIN_ROTARY_A);
-    uint8_t b = digitalRead(PIN_ROTARY_B);
+    uint8_t a = digitalRead(PIN_ROTARY_CLK);
+    uint8_t b = digitalRead(PIN_ROTARY_DT);
     uint8_t encoded = (a << 1) | b;
 
     // State machine for quadrature encoder
