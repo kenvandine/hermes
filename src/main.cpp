@@ -225,6 +225,40 @@ void setup() {
 }
 
 // ============================================================================
+// SPEAKER TEST FUNCTION
+// ============================================================================
+
+void testSpeakerTone() {
+    const int TONE_FREQUENCY = 440;      // Hz (A4 note)
+    const int SAMPLE_RATE = 48000;       // Speaker rate for Nabu Casa
+    const int TONE_DURATION_MS = 1000;   // 1 second
+    const int AMPLITUDE = 8000;          // Moderate volume
+
+    const int samplesPerCycle = SAMPLE_RATE / TONE_FREQUENCY;
+    const int totalSamples = (SAMPLE_RATE * TONE_DURATION_MS) / 1000;
+
+    int16_t audioBuffer[512];
+    int sampleIndex = 0;
+
+    Serial.println("[TEST] Generating 440Hz tone for 1 second...");
+
+    while (sampleIndex < totalSamples) {
+        int bufferSize = (totalSamples - sampleIndex > 512) ? 512 : (totalSamples - sampleIndex);
+
+        for (int i = 0; i < bufferSize; i++, sampleIndex++) {
+            float angle = (2.0 * PI * sampleIndex) / samplesPerCycle;
+            audioBuffer[i] = (int16_t)(AMPLITUDE * sin(angle));
+        }
+
+        if (halAudio) {
+            halAudio->writeSpeaker(audioBuffer, bufferSize);
+        }
+    }
+
+    Serial.println("[TEST] ✓ Tone test complete");
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
@@ -318,12 +352,18 @@ void loop() {
                 Serial.println("[CMD] ✗ No recording found. Press 'r' first");
             }
         }
+        else if (cmd == 't') {
+            // Test speaker with tone
+            Serial.println("\n[CMD] Testing speaker with 440Hz tone...");
+            testSpeakerTone();
+        }
         else if (cmd == 'h') {
             // Help
             Serial.println("\n=== Audio Debug Commands ===");
             Serial.println("r - Record current wake word buffer to /recording.wav");
             Serial.println("d - Download recording over serial (save to file on PC)");
             Serial.println("p - Play recording on device speaker");
+            Serial.println("t - Test speaker with 440Hz tone");
             Serial.println("h - Show this help");
             Serial.println("===========================\n");
         }
