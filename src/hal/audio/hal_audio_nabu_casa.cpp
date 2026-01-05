@@ -55,6 +55,22 @@ bool HALAudioNabuCasa::begin(uint32_t sampleRate) {
     delay(3000);  // Wait for XMOS to fully boot (per ESPHome)
     Serial.println("[HAL-Audio-NabuCasa] ✓ XMOS reset complete");
 
+    // Scan I2C bus to check if XMOS and AIC3204 are responding
+    Serial.println("[HAL-Audio-NabuCasa] Scanning I2C bus...");
+    int devicesFound = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
+            Serial.printf("[HAL-Audio-NabuCasa]   Found device at 0x%02X\n", addr);
+            devicesFound++;
+        }
+    }
+    if (devicesFound == 0) {
+        Serial.println("[HAL-Audio-NabuCasa] ⚠️  No I2C devices found!");
+    } else {
+        Serial.printf("[HAL-Audio-NabuCasa] ✓ Found %d I2C device(s)\n", devicesFound);
+    }
+
     // Enable speaker amplifier
     pinMode(PIN_SPEAKER_AMP_ENABLE, OUTPUT);
     digitalWrite(PIN_SPEAKER_AMP_ENABLE, HIGH);
