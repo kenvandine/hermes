@@ -485,19 +485,17 @@ void setupDisplay() {
         // For LED-only devices, state changes will be shown via LED patterns
     }
 
-    // Create UI task only if we have a UIManager
-    if (uiManager) {
-        xTaskCreatePinnedToCore(
-            uiTask,
-            "UI Task",
-            TASK_STACK_UI,
-            NULL,
-            TASK_PRIORITY_UI,
-            &uiTaskHandle,
-            TASK_CORE_UI
-        );
-        Serial.println("[DISPLAY] UI task created");
-    }
+    // Create UI/Display task (for both LVGL UI and LED ring animations)
+    xTaskCreatePinnedToCore(
+        uiTask,
+        "UI Task",
+        TASK_STACK_UI,
+        NULL,
+        TASK_PRIORITY_UI,
+        &uiTaskHandle,
+        TASK_CORE_UI
+    );
+    Serial.println("[DISPLAY] Display task created");
 }
 
 #ifndef DISABLE_AUDIO_TEMP
@@ -788,19 +786,26 @@ void printSystemInfo() {
 void uiTask(void* parameter) {
     Serial.println("[UI_TASK] UI task started");
 
-    // Wait for UI manager to be initialized
-    while (!uiManager) {
+    // Wait for display HAL to be initialized
+    while (!halDisplay) {
         delay(100);
     }
 
-    Serial.println("[UI_TASK] UI manager ready, starting update loop");
-
-    while (true) {
-        // Update LVGL display and handle touch input
-        uiManager->update();
-
-        // Maintain target frame rate (30 FPS)
-        delay(1000 / UI_UPDATE_RATE_HZ);
+    // Check if we have full UI or just LED ring
+    if (uiManager) {
+        Serial.println("[UI_TASK] UI manager ready, starting LVGL update loop");
+        while (true) {
+            // Update LVGL display and handle touch input
+            uiManager->update();
+            delay(1000 / UI_UPDATE_RATE_HZ);
+        }
+    } else {
+        Serial.println("[UI_TASK] LED ring mode, starting animation loop");
+        while (true) {
+            // Update LED ring animations
+            halDisplay->update();
+            delay(1000 / UI_UPDATE_RATE_HZ);  // 30 FPS for smooth animations
+        }
     }
 }
 
