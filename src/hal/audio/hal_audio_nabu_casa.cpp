@@ -212,7 +212,8 @@ size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
     }
 
     size_t bytesRead = 0;
-    esp_err_t err = i2s_read(I2S_NUM_0, tempBuffer, bytesToRead, &bytesRead, portMAX_DELAY);
+    // Use 100ms timeout instead of portMAX_DELAY to avoid blocking forever
+    esp_err_t err = i2s_read(I2S_NUM_0, tempBuffer, bytesToRead, &bytesRead, pdMS_TO_TICKS(100));
 
     if (callCount <= 5) {
         Serial.printf("[HAL-Audio-NabuCasa] i2s_read returned: err=%d, bytesRead=%d\n", err, bytesRead);
