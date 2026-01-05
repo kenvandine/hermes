@@ -277,6 +277,23 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
         return false;
     }
 
+    // Debug: Check audio amplitude
+    #if DEBUG_WAKE_WORD
+    static int debugCount = 0;
+    if (debugCount++ < 3) {  // Only first 3 inferences
+        int16_t minSample = 32767, maxSample = -32768;
+        int64_t sumSquares = 0;
+        for (size_t i = 0; i < sampleCount; i++) {
+            if (samples[i] < minSample) minSample = samples[i];
+            if (samples[i] > maxSample) maxSample = samples[i];
+            sumSquares += (int64_t)samples[i] * samples[i];
+        }
+        float rms = sqrt((float)sumSquares / sampleCount);
+        Serial.printf("[WakeWord] Audio stats: min=%d, max=%d, RMS=%.1f\n",
+                      minSample, maxSample, rms);
+    }
+    #endif
+
     // Convert samples to float (-1.0 to 1.0 range)
     convertSamples(samples, inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
