@@ -4,18 +4,18 @@
 #include "hal/hal_audio.h"
 
 /**
- * Nabu Casa Audio HAL Implementation (STUB)
+ * Nabu Casa Audio HAL Implementation
  *
- * TODO: Implement for XMOS XU316 + TI AIC3204 audio system
- * - 48kHz stereo audio
- * - Dual microphone array
+ * Implements XMOS XU316 + TI AIC3204 audio system:
+ * - Dual I2S buses (16kHz mic, 48kHz speaker)
+ * - Stereo to mono conversion
  * - Hardware echo cancellation (XMOS)
  * - Hardware noise suppression (XMOS)
  */
 class HALAudioNabuCasa : public HALAudio {
 public:
     HALAudioNabuCasa();
-    virtual ~HALAudioNabuCasa() = default;
+    virtual ~HALAudioNabuCasa();
 
     // HALAudio interface implementation
     bool begin(uint32_t sampleRate) override;

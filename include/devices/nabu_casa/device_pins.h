@@ -4,54 +4,66 @@
 /**
  * Nabu Casa Voice Preview Edition Pin Definitions
  *
- * NOTE: These pin assignments are placeholders and need to be verified
- * against the actual hardware schematic. The Nabu Casa Voice PE uses
- * XMOS XU316 for audio processing which handles the I2S communication
- * between microphones and the ESP32-S3.
+ * Based on official ESPHome configuration and schematic:
+ * https://github.com/esphome/home-assistant-voice-pe
+ * https://github.com/NabuCasa/support/blob/main/static/docs/voice/home_assistant_voice_pe_schematic_v1.0_241009.pdf
  *
- * TODO: Update with actual pin mappings from hardware documentation
+ * The XMOS XU316 handles microphone array processing (echo cancellation,
+ * noise suppression, auto gain) and communicates with ESP32-S3 via dual I2S.
  */
 
 // ============================================================================
-// I2S Audio Pins (XMOS XU316 <-> ESP32-S3)
+// I2S Audio Pins (Dual I2S buses for input and output)
 // ============================================================================
 
-// The XMOS processor handles microphone array processing and presents
-// processed audio to ESP32-S3 via I2S
-#define PIN_I2S_MCLK            0       // Master Clock (TBD)
-#define PIN_I2S_BCLK            1       // Bit Clock (TBD)
-#define PIN_I2S_WS              2       // Word Select / LRCLK (TBD)
-#define PIN_I2S_SD_IN           3       // Serial Data IN from XMOS (TBD)
-#define PIN_I2S_SD_OUT          4       // Serial Data OUT to AIC3204 (TBD)
+// I2S Input (Microphone from XMOS) - 16kHz, stereo, 32-bit
+#define PIN_I2S_MIC_LRCLK       14      // Word Select / LRCLK (input)
+#define PIN_I2S_MIC_BCLK        13      // Bit Clock (input)
+#define PIN_I2S_MIC_DIN         15      // Serial Data IN from XMOS
+
+// I2S Output (Speaker to AIC3204) - 48kHz, stereo, 32-bit
+#define PIN_I2S_SPK_LRCLK       7       // Word Select / LRCLK (output)
+#define PIN_I2S_SPK_BCLK        8       // Bit Clock (output)
+#define PIN_I2S_SPK_DOUT        10      // Serial Data OUT to AIC3204
+
+// No MCLK - XMOS generates clocks
+#define PIN_I2S_MCLK            -1      // Not used (XMOS is I2S master)
 
 // ============================================================================
-// I2C Bus (for AIC3204 codec control and possibly XMOS)
+// I2C Bus (for AIC3204 codec control and XMOS communication)
 // ============================================================================
 
-#define PIN_I2C_SDA             5       // I2C Data (TBD)
-#define PIN_I2C_SCL             6       // I2C Clock (TBD)
+#define PIN_I2C_SDA             5       // I2C Data (400kHz)
+#define PIN_I2C_SCL             6       // I2C Clock
 
 // ============================================================================
-// LED Ring Pins (WS2812B)
+// LED Ring Pins (WS2812B - 12 RGB LEDs)
 // ============================================================================
 
-#define PIN_LED_RING_DATA       7       // LED data pin (TBD)
-#define PIN_LED_RING_POWER      -1      // Optional power control (TBD)
+#define PIN_LED_RING_DATA       46      // LED data pin (WS2812B)
+#define PIN_LED_RING_POWER      45      // LED power supply enable
 
 // ============================================================================
-// Physical Control Pins
+// Audio Control Pins
+// ============================================================================
+
+#define PIN_SPEAKER_AMP_ENABLE  47      // Internal speaker amplifier enable
+#define PIN_VOICE_KIT_RESET     4       // XMOS reset pin
+
+// ============================================================================
+// Physical Control Pins (TODO: Verify these from schematic)
 // ============================================================================
 
 // Multi-function button
-#define PIN_BUTTON_ACTION       8       // Main action button (TBD)
+#define PIN_BUTTON_ACTION       -1      // Main action button (TODO)
 
 // Rotary encoder for volume control
-#define PIN_ROTARY_A            9       // Rotary encoder A (TBD)
-#define PIN_ROTARY_B            10      // Rotary encoder B (TBD)
-#define PIN_ROTARY_BUTTON       11      // Rotary encoder button (TBD)
+#define PIN_ROTARY_A            -1      // Rotary encoder A (TODO)
+#define PIN_ROTARY_B            -1      // Rotary encoder B (TODO)
+#define PIN_ROTARY_BUTTON       -1      // Rotary encoder button (TODO)
 
 // Hardware mute switch
-#define PIN_MUTE_SWITCH         12      // Mute switch (TBD)
+#define PIN_MUTE_SWITCH         -1      // Mute switch (TODO)
 
 // ============================================================================
 // Not Used (No display/touchscreen)
