@@ -316,6 +316,11 @@ void AudioPipeline::processIdle() {
         debugPrinted = true;
     }
 
+    // Feed silence to speaker to keep XMOS audio pipeline active
+    // (Some audio processors require bidirectional I2S to enable microphone)
+    memset(speakerFrame, 0, frameSize * sizeof(int16_t));
+    audio->writeSpeaker(speakerFrame, frameSize);
+
     // In idle mode, run wake word detection if enabled
     if (wakeWordEnabled && wakeWord && wakeWord->isEnabled()) {
         // Read from microphone
