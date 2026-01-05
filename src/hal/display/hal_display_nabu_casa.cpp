@@ -4,6 +4,8 @@
  * Uses FastLED to drive 12-LED WS2812B ring for visual state feedback
  */
 
+#ifdef DEVICE_NABU_CASA
+
 #include "hal/display/hal_display_nabu_casa.h"
 #include "devices/nabu_casa/device_config.h"
 #include "devices/nabu_casa/device_pins.h"
@@ -14,7 +16,11 @@ HALDisplayNabuCasa::HALDisplayNabuCasa()
     : brightness_(128)
     , currentState_(AppState::IDLE)
     , animationPhase_(0)
-    , lastUpdateMs_(0) {
+    , lastUpdateMs_(0)
+    , showingVolume_(false)
+    , displayVolume_(50)
+    , displayMuted_(false)
+    , volumeDisplayEndMs_(0) {
 
     // Initialize capabilities for LED ring
     capabilities_.hasFullUI = false;
@@ -97,6 +103,16 @@ void HALDisplayNabuCasa::updateCallInfo() {
     // No UI to update on LED ring device
 }
 
+void HALDisplayNabuCasa::showVolume(uint8_t volume, bool muted) {
+    showingVolume_ = true;
+    displayVolume_ = volume;
+    displayMuted_ = muted;
+    volumeDisplayEndMs_ = millis() + 2000;  // Show for 2 seconds
+
+    Serial.printf("[HAL-Display-NabuCasa] Volume display: %d%% %s\n",
+                  volume, muted ? "(MUTED)" : "");
+}
+
 // ============================================================================
 // Animation Helpers
 // ============================================================================
@@ -113,6 +129,41 @@ void HALDisplayNabuCasa::updateAnimation() {
     lastUpdateMs_ = now;
     animationPhase_++;
 
+    // Check if volume display timeout has expired
+    if (showingVolume_ && now >= volumeDisplayEndMs_) {
+        showingVolume_ = false;
+        Serial.println("[HAL-Display-NabuCasa] Volume display timeout - returning to state display");
+    }
+
+    // Show volume display if active
+    if (showingVolume_) {
+        // Clear all LEDs first
+        setAllLEDs(CRGB::Black);
+
+        // Calculate how many LEDs to light (0-12 based on 0-100%)
+        int ledsToLight = (displayVolume_ * DEVICE_LED_COUNT + 50) / 100;  // Round to nearest
+        if (ledsToLight > DEVICE_LED_COUNT) ledsToLight = DEVICE_LED_COUNT;
+
+        // Choose color based on mute state
+        CRGB volumeColor;
+        if (displayMuted_) {
+            volumeColor = CRGB::Red;  // Red when muted
+        } else if (displayVolume_ > 80) {
+            volumeColor = CRGB::Orange;  // Orange for high volume
+        } else {
+            volumeColor = CRGB::Cyan;  // Cyan for normal volume
+        }
+
+        // Light up the appropriate number of LEDs
+        for (int i = 0; i < ledsToLight; i++) {
+            leds_[i] = volumeColor;
+        }
+
+        FastLED.show();
+        return;  // Skip state animation while showing volume
+    }
+
+    // Normal state animation
     switch (currentState_) {
         case AppState::IDLE:
             // Soft breathing blue
@@ -200,3 +251,5 @@ CRGB HALDisplayNabuCasa::getStateColor(AppState state) {
         default:                    return CRGB::White;
     }
 }
+
+#endif // DEVICE_NABU_CASA

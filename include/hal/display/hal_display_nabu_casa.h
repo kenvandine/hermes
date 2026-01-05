@@ -31,6 +31,9 @@ public:
     void updateDeviceList() override;
     void updateCallInfo() override;
 
+    // Volume display (Nabu Casa specific)
+    void showVolume(uint8_t volume, bool muted);
+
 private:
     DisplayCapabilities capabilities_;
     uint8_t brightness_;
@@ -39,6 +42,12 @@ private:
     AppState currentState_;
     uint32_t animationPhase_;
     uint32_t lastUpdateMs_;
+
+    // Volume display state
+    bool showingVolume_;
+    uint8_t displayVolume_;
+    bool displayMuted_;
+    uint32_t volumeDisplayEndMs_;
 
     // LED buffer (initialized by FastLED)
     CRGB leds_[12];

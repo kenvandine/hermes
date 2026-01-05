@@ -61,6 +61,9 @@
 // HAL Components (multi-device support)
 #include "hal/hal_factory.h"
 #include "hal/display/hal_display_waveshare.h"  // For getDisplayDriver()
+#ifdef DEVICE_NABU_CASA
+#include "hal/display/hal_display_nabu_casa.h"  // For showVolume()
+#endif
 #include "hal/hal_controls.h"
 
 // ============================================================================
@@ -550,17 +553,37 @@ void setupDisplay() {
         Serial.println("[CONTROLS] ✓ Controls HAL initialized successfully");
 
         // Register control event callback
+        static bool currentMuteState = false;  // Track mute state
+        static uint8_t currentVolume = 50;      // Track volume level
+
         halControls->registerCallback([](const ControlEventData& event) {
             if (event.event == ControlEvent::VOLUME_SET && audioPipeline) {
                 // Rotary encoder volume control
+                currentVolume = event.value;
                 audioPipeline->setVolume(event.value);
                 Serial.printf("[CONTROLS] Volume: %d%%\n", event.value);
+
+                // Show volume on LED ring (if Nabu Casa device)
+#ifdef DEVICE_NABU_CASA
+                if (halDisplay) {
+                    auto* nabuDisplay = static_cast<HALDisplayNabuCasa*>(halDisplay.get());
+                    nabuDisplay->showVolume(currentVolume, currentMuteState);
+                }
+#endif
             }
             else if (event.event == ControlEvent::MUTE_TOGGLE && audioPipeline) {
-                // Button mute toggle (will be implemented in next task)
-                bool muted = (event.value == 1);
-                audioPipeline->mute(muted);
-                Serial.printf("[CONTROLS] %s\n", muted ? "Muted" : "Unmuted");
+                // Button mute toggle
+                currentMuteState = (event.value == 1);
+                audioPipeline->mute(currentMuteState);
+                Serial.printf("[CONTROLS] %s\n", currentMuteState ? "Muted" : "Unmuted");
+
+                // Show mute state on LED ring (if Nabu Casa device)
+#ifdef DEVICE_NABU_CASA
+                if (halDisplay) {
+                    auto* nabuDisplay = static_cast<HALDisplayNabuCasa*>(halDisplay.get());
+                    nabuDisplay->showVolume(currentVolume, currentMuteState);
+                }
+#endif
             }
         });
     }
