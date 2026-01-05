@@ -56,7 +56,17 @@
 #include "ai/ollama_client.h"
 #include "ai/tts_engine.h"
 #include "ai/ai_manager.h"
+#include "ai/whisper_client.h"
+#include "homeassistant/ha_conversation.h"
 #endif
+
+// HAL Components (multi-device support)
+#include "hal/hal_factory.h"
+#include "hal/display/hal_display_waveshare.h"  // For getDisplayDriver()
+#ifdef DEVICE_NABU_CASA
+#include "hal/display/hal_display_nabu_casa.h"  // For showVolume()
+#endif
+#include "hal/hal_controls.h"
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -86,7 +96,14 @@ UIManager* uiManager = nullptr;
 OllamaClient* ollamaClient = nullptr;
 TTSEngine* ttsEngine = nullptr;
 AIManager* aiManager = nullptr;
+WhisperClient* whisperClient = nullptr;
+HAConversation* haConversation = nullptr;
 #endif
+
+// HAL: Hardware Abstraction Layer
+std::unique_ptr<HALAudio> halAudio = nullptr;
+std::unique_ptr<HALDisplay> halDisplay = nullptr;
+std::unique_ptr<HALControls> halControls = nullptr;
 
 // Task handles for FreeRTOS tasks
 TaskHandle_t uiTaskHandle = NULL;
@@ -94,6 +111,15 @@ TaskHandle_t uiTaskHandle = NULL;
 TaskHandle_t audioTaskHandle = NULL;
 #endif
 TaskHandle_t mqttTaskHandle = NULL;
+
+// Audio buffering for Whisper STT
+#ifndef DISABLE_AUDIO_TEMP
+#define WHISPER_BUFFER_SECONDS 4
+#define WHISPER_BUFFER_SIZE (AUDIO_SAMPLE_RATE * WHISPER_BUFFER_SECONDS)
+int16_t* whisperAudioBuffer = nullptr;
+size_t whisperBufferIndex = 0;
+bool isCapturingForWhisper = false;
+#endif
 
 // ============================================================================
 // FORWARD DECLARATIONS
@@ -111,6 +137,9 @@ void setupCallManager();
 #ifndef DISABLE_AUDIO_TEMP
 void setupVoiceCommands();
 void setupAI();
+void processHACommand(const String& command);
+void startWhisperCapture();
+void processWhisperAudio();
 #endif
 void printSystemInfo();
 
@@ -217,6 +246,43 @@ void setup() {
 }
 
 // ============================================================================
+// SPEAKER TEST FUNCTION
+// ============================================================================
+
+void testSpeakerTone() {
+    const int TONE_FREQUENCY = 440;      // Hz (A4 note)
+    const int SAMPLE_RATE = 48000;       // Speaker rate for Nabu Casa
+    const int TONE_DURATION_MS = 1000;   // 1 second
+    const int AMPLITUDE = 20000;         // High volume for testing
+
+    const int samplesPerCycle = SAMPLE_RATE / TONE_FREQUENCY;
+    const int totalSamples = (SAMPLE_RATE * TONE_DURATION_MS) / 1000;
+
+    int16_t audioBuffer[512];
+    int sampleIndex = 0;
+    size_t totalWritten = 0;
+
+    Serial.printf("[TEST] Generating 440Hz tone: %d samples, amplitude=%d\n",
+                  totalSamples, AMPLITUDE);
+
+    while (sampleIndex < totalSamples) {
+        int bufferSize = (totalSamples - sampleIndex > 512) ? 512 : (totalSamples - sampleIndex);
+
+        for (int i = 0; i < bufferSize; i++, sampleIndex++) {
+            float angle = (2.0 * PI * sampleIndex) / samplesPerCycle;
+            audioBuffer[i] = (int16_t)(AMPLITUDE * sin(angle));
+        }
+
+        if (halAudio) {
+            size_t written = halAudio->writeSpeaker(audioBuffer, bufferSize);
+            totalWritten += written;
+        }
+    }
+
+    Serial.printf("[TEST] ✓ Tone complete - wrote %d samples\n", totalWritten);
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
@@ -229,12 +295,19 @@ void loop() {
         char cmd = Serial.read();
 
         if (cmd == 'r' && audioPipeline) {
-            // Record: Save current wake word buffer to SPIFFS
+            // Record: Clear buffer and capture fresh audio
             WakeWord* ww = audioPipeline->getWakeWord();
             if (ww) {
-                Serial.println("\n[CMD] Saving wake word buffer to /recording.wav...");
+                Serial.println("\n[CMD] Clearing buffer and recording fresh audio...");
+                ww->clearBuffer();
+                Serial.println("[CMD] Say your wake word now!");
+
+                // Wait for buffer to fill with fresh audio (1 second)
+                delay(1000);
+
+                Serial.println("[CMD] Saving to /recording.wav...");
                 if (ww->saveBufferToWAV("/recording.wav")) {
-                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download or 'p' to play");
+                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download");
                 } else {
                     Serial.println("[CMD] ✗ Failed to save recording");
                 }
@@ -285,13 +358,13 @@ void loop() {
                 // Skip WAV header (44 bytes)
                 file.seek(44);
 
-                I2SManager* i2s = audioPipeline->getI2S();
-                if (i2s) {
+                HALAudio* audio = audioPipeline->getAudio();
+                if (audio) {
                     int16_t buffer[320];
                     while (file.available()) {
                         size_t bytesRead = file.read((uint8_t*)buffer, sizeof(buffer));
                         size_t samplesRead = bytesRead / 2;
-                        i2s->writeSpeaker(buffer, samplesRead);
+                        audio->writeSpeaker(buffer, samplesRead);
                         delay(20);  // 20ms per frame
                     }
                     Serial.println("[CMD] ✓ Playback complete");
@@ -303,12 +376,18 @@ void loop() {
                 Serial.println("[CMD] ✗ No recording found. Press 'r' first");
             }
         }
+        else if (cmd == 't') {
+            // Test speaker with tone
+            Serial.println("\n[CMD] Testing speaker with 440Hz tone...");
+            testSpeakerTone();
+        }
         else if (cmd == 'h') {
             // Help
             Serial.println("\n=== Audio Debug Commands ===");
             Serial.println("r - Record current wake word buffer to /recording.wav");
             Serial.println("d - Download recording over serial (save to file on PC)");
             Serial.println("p - Play recording on device speaker");
+            Serial.println("t - Test speaker with 440Hz tone");
             Serial.println("h - Show this help");
             Serial.println("===========================\n");
         }
@@ -420,124 +499,112 @@ void setupWiFi() {
 }
 
 void setupDisplay() {
-    Serial.println("[DISPLAY] Initializing Waveshare ESP32-S3 1.8\" AMOLED display...");
+    Serial.println("[DISPLAY] Initializing display subsystem...");
 
-    // Initialize I2C for touch controller and TCA9554 GPIO expander
-    Wire.begin(TOUCH_SDA, TOUCH_SCL);
-    Serial.println("[DISPLAY] I2C bus initialized for touch and GPIO expander");
+    // Create HAL display instance for this device
+    Serial.printf("[DISPLAY] Creating display HAL for device: %s\n", HALFactory::getDeviceName());
+    halDisplay = HALFactory::createDisplay();
 
-    // Scan I2C bus to find devices
-    Serial.println("[DISPLAY] Scanning I2C bus...");
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        uint8_t error = Wire.endTransmission();
-        if (error == 0) {
-            Serial.printf("[DISPLAY]   Found I2C device at 0x%02X\n", addr);
-        }
-    }
-
-    // Initialize TCA9554 GPIO expander - try multiple common I2C addresses
-    // TCA9554 address depends on A0/A1/A2 pins: base 0x20-0x27
-    Serial.println("[DISPLAY] Searching for TCA9554 GPIO expander...");
-    uint8_t tca_addr = 0;
-    uint8_t possible_addrs[] = {0x20, 0x24, 0x21, 0x22, 0x23, 0x25, 0x26, 0x27};
-
-    for (int i = 0; i < 8; i++) {
-        Wire.beginTransmission(possible_addrs[i]);
-        if (Wire.endTransmission() == 0) {
-            tca_addr = possible_addrs[i];
-            Serial.printf("[DISPLAY]   Found TCA9554 at 0x%02X\n", tca_addr);
-            break;
-        }
-    }
-
-    if (tca_addr == 0) {
-        Serial.println("[DISPLAY] ✗ TCA9554 not found on I2C bus!");
-        Serial.println("[DISPLAY] Proceeding without GPIO expander...");
-    } else {
-        // Configure all TCA9554 pins as outputs (register 0x03, value 0x00)
-        Wire.beginTransmission(tca_addr);
-        Wire.write(0x03);  // Configuration register
-        Wire.write(0x00);  // All pins as outputs (0 = output, 1 = input)
-        if (Wire.endTransmission() != 0) {
-            Serial.println("[DISPLAY] ✗ Failed to configure TCA9554!");
-        } else {
-            Serial.println("[DISPLAY] ✓ TCA9554 configured (all pins as outputs)");
-        }
-
-        // Enable display power by setting pins 0, 1, 2, 6 HIGH (all expander pins used on this board)
-        Wire.beginTransmission(tca_addr);
-        Wire.write(0x01);  // Output Port register
-        Wire.write(0x47);  // Set pins 0, 1, 2, 6 HIGH (0b01000111)
-        if (Wire.endTransmission() != 0) {
-            Serial.println("[DISPLAY] ✗ Failed to enable display power!");
-        } else {
-            Serial.println("[DISPLAY] ✓ Display power enabled via TCA9554 pins 0,1,2,6");
-        }
-    }
-
-    delay(200);  // Wait for display power to stabilize
-
-    // Create QSPI bus using Arduino_GFX native QSPI support
-    Serial.println("[DISPLAY] Initializing QSPI bus with Arduino_ESP32QSPI...");
-    Arduino_DataBus *bus = new Arduino_ESP32QSPI(
-        TFT_CS,    /* CS: 12 */
-        TFT_SCL,   /* SCK: 11 */
-        TFT_SDA0,  /* SDIO0: 4 */
-        TFT_SDA1,  /* SDIO1: 5 */
-        TFT_SDA2,  /* SDIO2: 6 */
-        TFT_SDA3   /* SDIO3: 7 */
-    );
-
-    // Create SH8601 display driver using Arduino_GFX 1.4.9 built-in driver
-    Serial.println("[DISPLAY] Creating SH8601 display driver (Arduino_GFX 1.4.9)...");
-    gfx = new Arduino_SH8601(bus, GFX_NOT_DEFINED /* RST */, 0 /* rotation */, false /* IPS */, 368 /* width */, 448 /* height */);
-
-    if (!gfx->begin()) {
-        Serial.println("[DISPLAY] ✗ Failed to initialize display!");
+    if (!halDisplay) {
+        Serial.println("[DISPLAY] ✗ Failed to create display HAL!");
         return;
     }
 
-    Serial.println("[DISPLAY] ✓ Display initialized successfully");
+    // Check device capabilities
+    DisplayCapabilities caps = halDisplay->getCapabilities();
+    Serial.printf("[DISPLAY] Device capabilities: fullUI=%d, LEDRing=%d, touchScreen=%d\n",
+                  caps.hasFullUI, caps.hasLEDRing, caps.hasTouchScreen);
 
-    // Set brightness to maximum (AMOLED displays need this!)
-    Serial.println("[DISPLAY] Setting brightness to maximum...");
-    ((Arduino_SH8601*)gfx)->Display_Brightness(255);
-    delay(100);
+    // Initialize display hardware (LED ring or full display)
+    if (!halDisplay->begin()) {
+        Serial.println("[DISPLAY] ✗ Failed to initialize display HAL!");
+        halDisplay.reset();
+        return;
+    }
 
-    // Test display with solid colors
-    Serial.println("[DISPLAY] Testing display with colors...");
-    gfx->fillScreen(RED);
-    delay(1000);
-    gfx->fillScreen(GREEN);
-    delay(1000);
-    gfx->fillScreen(BLUE);
-    delay(1000);
-    gfx->fillScreen(WHITE);
-    delay(1000);
-    gfx->fillScreen(BLACK);
-    Serial.println("[DISPLAY] Color test complete");
+    // Only create UIManager for devices with full UI (LVGL)
+    if (caps.hasFullUI) {
+        // Get the initialized display driver for UIManager
+        #if defined(DEVICE_WAVESHARE)
+        gfx = static_cast<HALDisplayWaveshare*>(halDisplay.get())->getDisplayDriver();
+        if (!gfx) {
+            Serial.println("[DISPLAY] ✗ No display driver from HAL!");
+            return;
+        }
+        #endif
 
-    // Create UI Manager
-    Serial.println("[DISPLAY] Creating UI Manager...");
-    uiManager = new UIManager(stateMachine, deviceRegistry,
+        // Create UI Manager
+        Serial.println("[DISPLAY] Creating UI Manager...");
+        uiManager = new UIManager(stateMachine, deviceRegistry,
 #ifndef DISABLE_AUDIO_TEMP
-        callManager, audioPipeline
+            callManager, audioPipeline
 #else
-        nullptr, nullptr  // No call manager or audio when disabled
+            nullptr, nullptr  // No call manager or audio when disabled
 #endif
-    );
+        );
 
-    if (!uiManager->begin(gfx, &Wire)) {
-        Serial.println("[DISPLAY] ✗ Failed to initialize UI Manager!");
-        delete uiManager;
-        uiManager = nullptr;
-        return;
+        if (!uiManager->begin(gfx, &Wire)) {
+            Serial.println("[DISPLAY] ✗ Failed to initialize UI Manager!");
+            delete uiManager;
+            uiManager = nullptr;
+            return;
+        }
+
+        Serial.println("[DISPLAY] ✓ UI Manager initialized successfully");
+    } else {
+        Serial.println("[DISPLAY] ✓ Display HAL initialized (LED ring mode, no UI)");
+        // For LED-only devices, state changes will be shown via LED patterns
     }
 
-    Serial.println("[DISPLAY] ✓ UI Manager initialized successfully");
+    // Initialize controls HAL (physical buttons, rotary encoder, etc.)
+    Serial.println("[CONTROLS] Initializing controls subsystem...");
+    halControls = HALFactory::createControls();
 
-    // Create UI task
+    if (!halControls) {
+        Serial.println("[CONTROLS] ✗ Failed to create controls HAL!");
+    } else if (!halControls->begin()) {
+        Serial.println("[CONTROLS] ✗ Failed to initialize controls HAL!");
+        halControls.reset();
+    } else {
+        Serial.println("[CONTROLS] ✓ Controls HAL initialized successfully");
+
+        // Register control event callback
+        static bool currentMuteState = false;  // Track mute state
+        static uint8_t currentVolume = 50;      // Track volume level
+
+        halControls->registerCallback([](const ControlEventData& event) {
+            if (event.event == ControlEvent::VOLUME_SET && audioPipeline) {
+                // Rotary encoder volume control
+                currentVolume = event.value;
+                audioPipeline->setVolume(event.value);
+                Serial.printf("[CONTROLS] Volume: %d%%\n", event.value);
+
+                // Show volume on LED ring (if Nabu Casa device)
+#ifdef DEVICE_NABU_CASA
+                if (halDisplay) {
+                    auto* nabuDisplay = static_cast<HALDisplayNabuCasa*>(halDisplay.get());
+                    nabuDisplay->showVolume(currentVolume, currentMuteState);
+                }
+#endif
+            }
+            else if (event.event == ControlEvent::MUTE_TOGGLE && audioPipeline) {
+                // Button mute toggle
+                currentMuteState = (event.value == 1);
+                audioPipeline->mute(currentMuteState);
+                Serial.printf("[CONTROLS] %s\n", currentMuteState ? "Muted" : "Unmuted");
+
+                // Show mute state on LED ring (if Nabu Casa device)
+#ifdef DEVICE_NABU_CASA
+                if (halDisplay) {
+                    auto* nabuDisplay = static_cast<HALDisplayNabuCasa*>(halDisplay.get());
+                    nabuDisplay->showVolume(currentVolume, currentMuteState);
+                }
+#endif
+            }
+        });
+    }
+
+    // Create UI/Display task (for both LVGL UI and LED ring animations)
     xTaskCreatePinnedToCore(
         uiTask,
         "UI Task",
@@ -547,31 +614,46 @@ void setupDisplay() {
         &uiTaskHandle,
         TASK_CORE_UI
     );
-
-    Serial.println("[DISPLAY] UI task created");
+    Serial.println("[DISPLAY] Display task created");
 }
 
 #ifndef DISABLE_AUDIO_TEMP
 void setupAudio() {
-    Serial.println("[AUDIO] Initializing audio pipeline...");
+    Serial.println("[AUDIO] Initializing audio subsystem...");
 
-    audioPipeline = new AudioPipeline();
+    // Create HAL audio instance for this device
+    Serial.printf("[AUDIO] Creating audio HAL for device: %s\n", HALFactory::getDeviceName());
+    halAudio = HALFactory::createAudio();
+
+    if (!halAudio) {
+        Serial.println("[AUDIO] ✗ Failed to create audio HAL!");
+        return;
+    }
+
+    // Create audio pipeline with HAL
+    audioPipeline = new AudioPipeline(halAudio.get());
 
     if (!audioPipeline->begin(AUDIO_SAMPLE_RATE)) {
         Serial.println("[AUDIO] ✗ Failed to initialize audio pipeline!");
         delete audioPipeline;
         audioPipeline = nullptr;
+        halAudio.reset();
         return;
     }
 
-    Serial.println("[AUDIO] ✓ Audio pipeline initialized successfully");
+    Serial.println("[AUDIO] ✓ Audio subsystem initialized successfully");
 
     // Register wake word callback
     audioPipeline->onWakeWordDetected([]() {
-        Serial.println("[AUDIO] Wake word callback triggered!");
+        Serial.println("[AUDIO] Wake word detected!");
         if (stateMachine) {
             // Transition to LISTENING state
             stateMachine->setState(AppState::LISTENING);
+        }
+
+        // Start capturing audio for Whisper STT
+        if (WHISPER_ENABLED && whisperClient) {
+            startWhisperCapture();
         }
     });
 
@@ -692,7 +774,39 @@ void setupVoiceCommands() {
         Serial.printf("[VoiceCommands] Loaded %d room names\n", devices.size());
     }
 
-    // Create speech recognizer
+    // Initialize Whisper client for speech-to-text
+    if (WHISPER_ENABLED) {
+        Serial.println("[Whisper] Initializing Whisper speech recognition...");
+        whisperClient = new WhisperClient();
+
+        if (!whisperClient->begin(WHISPER_SERVER_URL, WHISPER_SERVER_PORT)) {
+            Serial.println("[Whisper] ✗ Failed to initialize Whisper client");
+            delete whisperClient;
+            whisperClient = nullptr;
+        } else {
+            Serial.printf("[Whisper] ✓ Whisper client initialized (%s:%d)\n",
+                         WHISPER_SERVER_URL, WHISPER_SERVER_PORT);
+
+            // Test connection
+            if (whisperClient->testConnection()) {
+                Serial.println("[Whisper] ✓ Connection to Whisper server verified");
+            } else {
+                Serial.println("[Whisper] ⚠ Whisper server connection test failed");
+            }
+
+            // Allocate audio buffer for Whisper
+            whisperAudioBuffer = (int16_t*)malloc(WHISPER_BUFFER_SIZE * sizeof(int16_t));
+            if (!whisperAudioBuffer) {
+                Serial.println("[Whisper] ✗ Failed to allocate audio buffer");
+                delete whisperClient;
+                whisperClient = nullptr;
+            } else {
+                Serial.printf("[Whisper] ✓ Allocated %d second audio buffer\n", WHISPER_BUFFER_SECONDS);
+            }
+        }
+    }
+
+    // Create speech recognizer (for keyword spotting fallback)
     speechRecognizer = new SpeechRecognizer();
     if (speechRecognizer->begin(AUDIO_SAMPLE_RATE, COMMAND_THRESHOLD)) {
         Serial.println("[VoiceCommands] ✓ Speech recognizer initialized");
@@ -736,6 +850,20 @@ void setupVoiceCommands() {
                         }
                         break;
 
+                    case VoiceCommand::HA_CONTROL:
+                        // Send to Home Assistant
+                        if (haConversation && !result.haCommand.isEmpty()) {
+                            Serial.printf("[VoiceCommands] HA Command: %s\n", result.haCommand.c_str());
+                            processHACommand(result.haCommand);
+                        } else {
+                            Serial.println("[VoiceCommands] ✗ HA conversation not available");
+                            // Fall back to speaking error
+                            if (ttsEngine) {
+                                ttsEngine->speak("Home Assistant is not connected");
+                            }
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -747,6 +875,156 @@ void setupVoiceCommands() {
 
     Serial.println("[VoiceCommands] ✓ Voice command system initialized");
 }
+
+#ifndef DISABLE_AUDIO_TEMP
+void startWhisperCapture() {
+    if (!whisperAudioBuffer || !whisperClient) {
+        Serial.println("[Whisper] Cannot start capture - buffer or client not initialized");
+        return;
+    }
+
+    Serial.println("[Whisper] Starting audio capture...");
+    whisperBufferIndex = 0;
+    isCapturingForWhisper = true;
+}
+
+void processWhisperAudio() {
+    if (!whisperClient || !whisperAudioBuffer) {
+        Serial.println("[Whisper] Cannot process audio - not initialized");
+        return;
+    }
+
+    if (whisperBufferIndex == 0) {
+        Serial.println("[Whisper] No audio captured");
+        return;
+    }
+
+    Serial.printf("[Whisper] Processing %d samples...\n", whisperBufferIndex);
+
+    // Transcribe audio
+    WhisperClient::Response response = whisperClient->transcribe(
+        whisperAudioBuffer,
+        whisperBufferIndex,
+        AUDIO_SAMPLE_RATE,
+        1  // mono
+    );
+
+    if (response.success && !response.text.isEmpty()) {
+        Serial.printf("[Whisper] Transcription: \"%s\" (%.0fms, confidence: %.2f)\n",
+                      response.text.c_str(), response.durationMs, response.confidence);
+
+        // Process transcribed text with command processor
+        if (commandProcessor) {
+            commandProcessor->startListening(1000);  // Short timeout since we already have text
+            CommandResult result = commandProcessor->processText(response.text);
+
+            if (result.isValid()) {
+                Serial.printf("[Whisper] Executing command: %s\n", result.toString().c_str());
+
+                // Execute command
+                switch (result.command) {
+                    case VoiceCommand::DROP_IN:
+                    case VoiceCommand::CALL:
+                        if (callManager) {
+                            callManager->initiateCall(result.targetRoom);
+                        }
+                        break;
+
+                    case VoiceCommand::HANG_UP:
+                        if (callManager) {
+                            callManager->hangupCall();
+                        }
+                        break;
+
+                    case VoiceCommand::CANCEL:
+                        if (stateMachine) {
+                            stateMachine->setState(AppState::IDLE);
+                        }
+                        break;
+
+                    case VoiceCommand::ASK_AI:
+                        if (aiManager && !result.aiQuery.isEmpty()) {
+                            aiManager->processQuery(result.aiQuery);
+                        }
+                        break;
+
+                    case VoiceCommand::HA_CONTROL:
+                        if (haConversation && !result.haCommand.isEmpty()) {
+                            processHACommand(result.haCommand);
+                        }
+                        break;
+
+                    default:
+                        Serial.println("[Whisper] Unknown command type");
+                        break;
+                }
+            } else {
+                Serial.println("[Whisper] Could not parse command from transcription");
+                // Return to idle
+                if (stateMachine) {
+                    stateMachine->setState(AppState::IDLE);
+                }
+            }
+        }
+    } else {
+        Serial.printf("[Whisper] Transcription failed: %s\n", response.error.c_str());
+        // Return to idle on failure
+        if (stateMachine) {
+            stateMachine->setState(AppState::IDLE);
+        }
+    }
+
+    // Reset capture state
+    whisperBufferIndex = 0;
+    isCapturingForWhisper = false;
+}
+
+void processHACommand(const String& command) {
+    if (!haConversation) {
+        Serial.println("[HA] No conversation client available");
+        return;
+    }
+
+    // Transition to AI_QUERY state (reuse for HA queries)
+    if (stateMachine) {
+        stateMachine->setState(AppState::AI_QUERY);
+    }
+
+    Serial.printf("[HA] Processing command: %s\n", command.c_str());
+
+    // Send to Home Assistant
+    HAConversation::Response response = haConversation->process(command);
+
+    if (response.success) {
+        Serial.printf("[HA] ✓ Success: %s\n", response.speech.c_str());
+
+        // Publish to MQTT for HA dashboard
+        if (mqttClient) {
+            mqttClient->publishAIQuery(command);
+            mqttClient->publishAIResponse(command, response.speech, 0);
+        }
+
+        // Speak the response
+        if (ttsEngine) {
+            stateMachine->setState(AppState::AI_RESPONSE);
+            ttsEngine->speak(response.speech);
+        }
+    } else {
+        Serial.printf("[HA] ✗ Error: %s\n", response.error.c_str());
+
+        // Speak error
+        if (ttsEngine) {
+            String errorMsg = "Sorry, I couldn't " + command;
+            ttsEngine->speak(errorMsg);
+        }
+    }
+
+    // Return to idle after response
+    if (stateMachine) {
+        stateMachine->setState(AppState::IDLE);
+    }
+}
+#endif
 
 void setupAI() {
     Serial.println("[AI] Initializing AI assistant system...");
@@ -780,8 +1058,27 @@ void setupAI() {
     ttsEngine->setSpeed(TTS_SPEED);
     Serial.println("[AI] ✓ TTS engine initialized");
 
+    // Initialize Home Assistant Conversation API
+    Serial.println("[HA] Initializing Home Assistant conversation...");
+    haConversation = new HAConversation();
+    if (!haConversation->begin(HA_HOST, HA_TOKEN)) {
+        Serial.println("[HA] ✗ Failed to initialize HA conversation");
+        delete haConversation;
+        haConversation = nullptr;
+    } else {
+        Serial.println("[HA] ✓ HA conversation initialized");
+
+        // Test connection
+        if (haConversation->testConnection()) {
+            Serial.println("[HA] ✓ Connection to HA API verified");
+        } else {
+            Serial.println("[HA] ⚠ HA API connection test failed");
+        }
+    }
+
     // Create AI manager
-    if (!ollamaClient || !ttsEngine || !uiManager || !mqttClient || !stateMachine) {
+    // Note: uiManager is optional for LED-only devices (Nabu Casa)
+    if (!ollamaClient || !ttsEngine || !mqttClient || !stateMachine) {
         Serial.println("[AI] ✗ Missing dependencies for AI manager");
         return;
     }
@@ -828,19 +1125,38 @@ void printSystemInfo() {
 void uiTask(void* parameter) {
     Serial.println("[UI_TASK] UI task started");
 
-    // Wait for UI manager to be initialized
-    while (!uiManager) {
+    // Wait for display HAL to be initialized
+    while (!halDisplay) {
         delay(100);
     }
 
-    Serial.println("[UI_TASK] UI manager ready, starting update loop");
+    // Check if we have full UI or just LED ring
+    if (uiManager) {
+        Serial.println("[UI_TASK] UI manager ready, starting LVGL update loop");
+        while (true) {
+            // Update LVGL display and handle touch input
+            uiManager->update();
 
-    while (true) {
-        // Update LVGL display and handle touch input
-        uiManager->update();
+            // Update controls (button debouncing via OneButton)
+            if (halControls) {
+                halControls->update();
+            }
 
-        // Maintain target frame rate (30 FPS)
-        delay(1000 / UI_UPDATE_RATE_HZ);
+            delay(1000 / UI_UPDATE_RATE_HZ);
+        }
+    } else {
+        Serial.println("[UI_TASK] LED ring mode, starting animation loop");
+        while (true) {
+            // Update LED ring animations
+            halDisplay->update();
+
+            // Update controls (button debouncing via OneButton, rotary encoder)
+            if (halControls) {
+                halControls->update();
+            }
+
+            delay(1000 / UI_UPDATE_RATE_HZ);  // 30 FPS for smooth animations
+        }
     }
 }
 
@@ -865,18 +1181,43 @@ void audioTask(void* parameter) {
 
         // Phase 6: Process speech recognition when in LISTENING state
         if (stateMachine && stateMachine->getState() == AppState::LISTENING) {
-            if (speechRecognizer && speechRecognizer->isEnabled()) {
+            HALAudio* audio = audioPipeline->getAudio();
+
+            // Whisper STT: Buffer audio for transcription
+            if (WHISPER_ENABLED && isCapturingForWhisper && whisperClient && whisperAudioBuffer) {
+                if (audio && audioFrame) {
+                    size_t samplesRead = audio->readMicrophone(audioFrame, 320);
+                    if (samplesRead > 0) {
+                        // Buffer audio samples
+                        size_t samplesAvailable = WHISPER_BUFFER_SIZE - whisperBufferIndex;
+                        size_t samplesToCopy = (samplesRead < samplesAvailable) ? samplesRead : samplesAvailable;
+
+                        if (samplesToCopy > 0) {
+                            memcpy(&whisperAudioBuffer[whisperBufferIndex], audioFrame, samplesToCopy * sizeof(int16_t));
+                            whisperBufferIndex += samplesToCopy;
+                        }
+
+                        // Check if buffer is full
+                        if (whisperBufferIndex >= WHISPER_BUFFER_SIZE) {
+                            Serial.println("[Whisper] Buffer full, processing audio...");
+                            isCapturingForWhisper = false;
+                            processWhisperAudio();
+                        }
+                    }
+                }
+            }
+            // Fallback to keyword spotting if Whisper is disabled
+            else if (speechRecognizer && speechRecognizer->isEnabled()) {
                 // Read audio from microphone for speech recognition
-                I2SManager* i2s = audioPipeline->getI2S();
-                if (i2s && audioFrame) {
-                    size_t samplesRead = i2s->readMicrophone(audioFrame, 320);
+                if (audio && audioFrame) {
+                    size_t samplesRead = audio->readMicrophone(audioFrame, 320);
                     if (samplesRead > 0) {
                         speechRecognizer->process(audioFrame, samplesRead);
                     }
                 }
             }
 
-            // Check for command timeout
+            // Check for command timeout or buffer completion
             if (commandProcessor && commandProcessor->hasTimedOut()) {
                 // On timeout, check if we have a partial AI query
                 CommandResult partial = commandProcessor->getPartialCommand();
@@ -1104,7 +1445,12 @@ void onStateChanged(AppState oldState, AppState newState) {
     }
 #endif
 
-    // Phase 7: Update UI based on state
+    // Phase 7: Update LED ring immediately
+    if (halDisplay) {
+        halDisplay->showState(newState);
+    }
+
+    // Update UI manager (for devices with full display)
     if (uiManager) {
         uiManager->onStateChanged(oldState, newState);
     }

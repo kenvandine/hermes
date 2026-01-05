@@ -3,7 +3,7 @@
 #include <SPIFFS.h>
 
 // Edge Impulse wake word model
-#include <Hey_Hermes_-_Wake_Word_inferencing.h>
+#include <Hermes_Wake_Word_inferencing.h>
 
 // Override Edge Impulse memory allocation functions to use PSRAM
 // These replace the weak symbols in edge-impulse-sdk/porting/clib/ei_classifier_porting.cpp
@@ -238,6 +238,14 @@ void WakeWord::reset() {
     lastDetectionTime = 0;
 }
 
+void WakeWord::clearBuffer() {
+    if (rollingBuffer && initialized) {
+        memset(rollingBuffer, 0, rollingBufferSize * sizeof(int16_t));
+        rollingBufferPos = 0;
+        Serial.println("[WakeWord] Buffer cleared");
+    }
+}
+
 void WakeWord::setThreshold(float thresh) {
     threshold = constrain(thresh, 0.0f, 1.0f);
     Serial.printf("[WakeWord] Threshold set to: %.2f\n", threshold);
@@ -276,6 +284,23 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
                       EI_CLASSIFIER_RAW_SAMPLE_COUNT, sampleCount);
         return false;
     }
+
+    // Debug: Check audio amplitude
+    #if DEBUG_WAKE_WORD
+    static int debugCount = 0;
+    if (debugCount++ < 3) {  // Only first 3 inferences
+        int16_t minSample = 32767, maxSample = -32768;
+        int64_t sumSquares = 0;
+        for (size_t i = 0; i < sampleCount; i++) {
+            if (samples[i] < minSample) minSample = samples[i];
+            if (samples[i] > maxSample) maxSample = samples[i];
+            sumSquares += (int64_t)samples[i] * samples[i];
+        }
+        float rms = sqrt((float)sumSquares / sampleCount);
+        Serial.printf("[WakeWord] Audio stats: min=%d, max=%d, RMS=%.1f\n",
+                      minSample, maxSample, rms);
+    }
+    #endif
 
     // Convert samples to float (-1.0 to 1.0 range)
     convertSamples(samples, inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT);

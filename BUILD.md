@@ -8,13 +8,30 @@ This document explains how to build and upload the HERMES firmware to your ESP32
 - PlatformIO (installed in `.venv` or system-wide)
 - ESP32-S3 device connected via USB
 
+## Supported Devices
+
+HERMES supports multiple hardware platforms:
+
+- **Waveshare ESP32-S3 1.8" AMOLED Touch** (default)
+  - Full touchscreen UI with LVGL
+  - 368×448 AMOLED display
+  - Capacitive touch control
+
+- **Nabu Casa Voice PE**
+  - LED ring visual feedback (12 WS2812B LEDs)
+  - Physical controls (rotary encoder, button, mute switch)
+  - No display UI
+
 ## Quick Start
 
 The easiest way to build and upload is to use the `build.sh` script:
 
 ```bash
-# Build and upload with default configuration
+# Build and upload for Waveshare (default)
 ./build.sh upload
+
+# Build and upload for Nabu Casa Voice PE
+PLATFORM=nabu_casa ./build.sh upload
 
 # Just build (don't upload)
 ./build.sh
@@ -40,6 +57,7 @@ If you don't set any environment variables, the following defaults are used:
 | `OLLAMA_HOST` | http://your-server-ip:11434 |
 | `PIPER_HOST` | http://your-server-ip:10200 |
 | `HA_HOST` | http://your-server-ip:8123 |
+| `HA_TOKEN` | your_ha_token_here |
 
 ### Custom Configuration
 
@@ -74,6 +92,7 @@ export MQTT_PASSWORD="my-secure-password"
 export OLLAMA_HOST="http://192.168.1.100:11434"
 export PIPER_HOST="http://192.168.1.100:10200"
 export HA_HOST="http://192.168.1.100:8123"
+export HA_TOKEN="your-long-lived-access-token-here"
 EOF
 
 # Source the config and build
@@ -81,6 +100,95 @@ source .env && ./build.sh upload
 ```
 
 **Important:** Add `.env` to your `.gitignore` to avoid committing credentials!
+
+### Home Assistant Voice Control Integration
+
+To enable voice control of Home Assistant devices, you need to configure a long-lived access token:
+
+1. **Create a long-lived access token** in Home Assistant:
+   - Go to your Home Assistant profile: **Settings** → **Profile** → **Long-Lived Access Tokens**
+   - Click **"Create Token"**
+   - Give it a name like "HERMES Voice Control"
+   - Copy the token (you won't be able to see it again!)
+
+2. **Set the token in your configuration**:
+   ```bash
+   export HA_HOST="http://192.168.1.100:8123"
+   export HA_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+   ```
+
+3. **Build with the token**:
+   ```bash
+   HA_HOST="http://192.168.1.100:8123" \
+   HA_TOKEN="your-actual-token" \
+   ./build.sh upload
+   ```
+
+Now you can use voice commands like:
+- "Hey Hermes, turn on kitchen light"
+- "Hey Hermes, set living room temperature to 72"
+- "Hey Hermes, dim bedroom lights to 50%"
+
+The system will automatically route device control commands to Home Assistant, while keeping general questions routed to the Ollama AI assistant.
+
+### Whisper Speech Recognition (Recommended)
+
+HERMES uses Whisper for accurate speech-to-text recognition after wake word detection. This provides much better recognition than keyword spotting.
+
+**Why Whisper?**
+- 95%+ accuracy for natural language
+- Understands any phrase (not limited to keywords)
+- Handles accents and pronunciation variations
+- Enables natural conversations with your device
+
+**Setup Options:**
+
+#### Option 1: faster-whisper (Recommended)
+```bash
+# Install faster-whisper
+pip install faster-whisper
+
+# Run the server
+python -m faster_whisper.server --model base.en --host 0.0.0.0 --port 9000
+```
+
+#### Option 2: Wyoming Protocol (Home Assistant)
+If you're using Home Assistant, you can use the Wyoming Whisper add-on:
+1. Install **Wyoming Whisper** add-on from Home Assistant
+2. Configure port 9000
+3. Use the HA server IP as your WHISPER_HOST
+
+#### Option 3: Docker
+```bash
+docker run -d \
+  --name whisper \
+  -p 9000:9000 \
+  ghcr.io/rhasspy/wyoming-whisper:latest \
+  --model base-int8 \
+  --language en
+```
+
+**Configuration:**
+```bash
+# Set Whisper server location
+export WHISPER_HOST="http://192.168.1.52:9000"
+
+# Build with Whisper enabled
+./build.sh upload
+```
+
+**Model Selection:**
+- `tiny` - Fastest, less accurate (~1GB RAM)
+- `base` - Good balance (recommended, ~1GB RAM)
+- `small` - Better accuracy (~2GB RAM)
+- `medium` - High accuracy (~5GB RAM)
+
+**Performance:**
+- Latency: 2-4 seconds total (buffering + transcription)
+- Accuracy: 95%+ for clear speech
+- Works on local network (no internet required)
+
+**Note:** Whisper is enabled by default. To disable it, set `WHISPER_ENABLED false` in `include/config.h`.
 
 ## Build Process
 
@@ -91,6 +199,30 @@ When you run `build.sh`, the following happens:
 3. **Compilation**: PlatformIO compiles the firmware with your configuration
 4. **Upload** (if requested): Uploads the firmware to your ESP32-S3 device
 
+## Building for Different Devices
+
+### Using build.sh (Recommended)
+
+```bash
+# Waveshare (default)
+./build.sh upload
+
+# Nabu Casa Voice PE
+PLATFORM=nabu_casa ./build.sh upload
+```
+
+### Using PlatformIO Directly
+
+```bash
+# Waveshare ESP32-S3 AMOLED Touch
+.venv/bin/pio run -e waveshare
+.venv/bin/pio run -e waveshare --target upload
+
+# Nabu Casa Voice PE
+.venv/bin/pio run -e nabu_casa
+.venv/bin/pio run -e nabu_casa --target upload
+```
+
 ## Manual Build Steps
 
 If you prefer to run the steps manually:
@@ -99,16 +231,17 @@ If you prefer to run the steps manually:
 # 1. Set environment variables
 export ROOM_NAME="Living Room"
 export WIFI_SSID="my-network"
+export PLATFORM="waveshare"  # or "nabu_casa"
 # ... etc ...
 
 # 2. Generate configuration
 python3 scripts/generate_config.py
 
-# 3. Build
-.venv/bin/pio run
+# 3. Build for specific device
+.venv/bin/pio run -e waveshare  # or -e nabu_casa
 
 # 4. Upload
-.venv/bin/pio run --target upload
+.venv/bin/pio run -e waveshare --target upload  # or -e nabu_casa
 ```
 
 ## Monitoring Serial Output
@@ -166,6 +299,27 @@ sudo usermod -a -G dialout $USER
 2. Check MQTT username and password
 3. Ensure your MQTT broker allows connections from the ESP32's IP
 4. Check serial output for MQTT error messages
+
+## Device-Specific Features
+
+### Waveshare ESP32-S3 AMOLED Touch
+
+- **Display**: 1.8" AMOLED (368×448) with full LVGL UI
+- **Input**: Capacitive touch screen
+- **Audio**: External I2S microphone and speaker required
+- **Visual Feedback**: Full-color UI with device list and call status
+- **Pin Configuration**: See `docs/hardware_setup_waveshare_amoled.md`
+
+### Nabu Casa Voice PE
+
+- **Display**: 12-LED WS2812B ring (visual state indicators)
+- **Input**: Rotary encoder (volume), action button (mute), hardware mute switch
+- **Audio**: Built-in AIC3204 codec with XMOS USB audio processor
+- **Visual Feedback**:
+  - LED colors: Blue (idle), Green (listening/active), Red (error/muted)
+  - Volume display: LED count shows volume level (0-12 LEDs = 0-100%)
+  - Color-coded volume: Cyan (normal), Orange (high), Red (muted)
+- **Pin Configuration**: Pre-configured in `include/devices/nabu_casa/device_pins.h`
 
 ## Advanced
 

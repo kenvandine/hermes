@@ -157,7 +157,7 @@
 #define WAKE_WORD_ENABLED       true   // Edge Impulse model integrated
 #define WAKE_WORD_THRESHOLD     0.35   // 0.0 - 1.0, VERY LOW for testing (raised back up after confirming detection)
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
-#define DEBUG_WAKE_WORD         false  // Disable to prevent Serial corruption of audio buffer
+#define DEBUG_WAKE_WORD         true  // Disable to prevent Serial corruption of audio buffer
 
 // Voice command recognition
 #define VOICE_COMMANDS_ENABLED  true   // Set true when keyword spotting model ready
@@ -267,7 +267,22 @@
 // Whisper speech recognition server (optional)
 #define WHISPER_SERVER_URL      "http://192.168.1.52"  // Whisper LXD container IP
 #define WHISPER_SERVER_PORT     9000                   // Whisper API port
-#define WHISPER_ENABLED         false                  // Enable server-side STT
+#define WHISPER_ENABLED         true                   // Enable Whisper speech-to-text
+
+// Home Assistant API Configuration
+#ifndef HA_HOST
+#define HA_HOST                 "http://homeassistant.local:8123"
+#endif
+
+#ifndef HA_TOKEN
+// Get long-lived access token from:
+// Home Assistant → Profile → Long-Lived Access Tokens
+#define HA_TOKEN                "your_ha_token_here"
+#endif
+
+// Command routing preferences
+#define HA_DEVICE_CONTROL       true   // Route device commands to HA
+#define HA_FALLBACK_TO_AI       true   // If HA fails, try Ollama
 
 // AI system prompt (concise responses for voice)
 #define AI_SYSTEM_PROMPT        "You are a helpful home assistant. Keep responses under 50 words."

@@ -6,8 +6,9 @@ import serial
 import time
 import sys
 
-SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_PORT = "/dev/ttyACM1"
 BAUD_RATE = 115200
+
 
 def main():
     print(f"Opening {SERIAL_PORT} at {BAUD_RATE} baud...")
@@ -18,7 +19,7 @@ def main():
 
         # First, record audio
         print("\nSending 'r' command to record audio...")
-        ser.write(b'r')
+        ser.write(b"r")
         ser.flush()
         time.sleep(3)  # Wait for recording to complete
 
@@ -28,7 +29,7 @@ def main():
 
         # Now download
         print("\nSending 'd' command to download WAV...")
-        ser.write(b'd')
+        ser.write(b"d")
         ser.flush()
         time.sleep(0.5)
 
@@ -46,13 +47,13 @@ def main():
                 line = ser.readline()
                 all_lines.append(line)
 
-                line_text = line.decode('utf-8', errors='ignore')
+                line_text = line.decode("utf-8", errors="ignore")
 
-                if '--- BEGIN WAV FILE ---' in line_text:
+                if "--- BEGIN WAV FILE ---" in line_text:
                     start_found = True
                     print(f"Found start marker at line {len(all_lines)}")
 
-                if '--- END WAV FILE ---' in line_text:
+                if "--- END WAV FILE ---" in line_text:
                     end_found = True
                     print(f"Found end marker at line {len(all_lines)}")
                     break
@@ -75,24 +76,27 @@ def main():
 
         # Reassemble and extract WAV data
         print("\nExtracting WAV data...")
-        all_data = b''.join(all_lines)
+        all_data = b"".join(all_lines)
 
-        start_marker = b'--- BEGIN WAV FILE ---'
-        end_marker = b'--- END WAV FILE ---'
+        start_marker = b"--- BEGIN WAV FILE ---"
+        end_marker = b"--- END WAV FILE ---"
 
         start_idx = all_data.find(start_marker)
         end_idx = all_data.find(end_marker)
 
         # WAV data is between markers (skip the newline after start marker)
         wav_start = start_idx + len(start_marker)
-        while wav_start < len(all_data) and all_data[wav_start:wav_start+1] in (b'\n', b'\r'):
+        while wav_start < len(all_data) and all_data[wav_start : wav_start + 1] in (
+            b"\n",
+            b"\r",
+        ):
             wav_start += 1
 
         wav_data = all_data[wav_start:end_idx]
 
         # Save to file
-        output_file = '/tmp/recording.wav'
-        with open(output_file, 'wb') as f:
+        output_file = "/tmp/recording.wav"
+        with open(output_file, "wb") as f:
             f.write(wav_data)
 
         print(f"\n✓ Saved {len(wav_data)} bytes to {output_file}")
@@ -100,7 +104,7 @@ def main():
         print(f"To analyze: ffprobe {output_file}")
 
         # Quick validation
-        if wav_data[:4] == b'RIFF':
+        if wav_data[:4] == b"RIFF":
             print("✓ WAV header looks correct (starts with RIFF)")
         else:
             print(f"✗ WAV header looks wrong (starts with {wav_data[:4]})")
@@ -109,5 +113,6 @@ def main():
         print(f"\n✗ Error: {e}")
         sys.exit(1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

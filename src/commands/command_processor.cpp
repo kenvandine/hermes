@@ -165,31 +165,11 @@ CommandResult CommandProcessor::processText(const String& text) {
 
     Serial.printf("[CommandProcessor] Processing text: '%s'\n", text.c_str());
 
-    // Check if text starts with "ask" for AI query
     String textLower = text;
     textLower.toLowerCase();
     textLower.trim();
 
-    if (textLower.startsWith("ask ")) {
-        // Extract query (everything after "ask ")
-        String query = text.substring(4);
-        query.trim();
-
-        if (query.length() > 0) {
-            CommandResult result;
-            result.command = VoiceCommand::ASK_AI;
-            result.aiQuery = query;
-            result.confidence = 0.9f;  // High confidence for text-based input
-            result.rawText = text;
-
-            Serial.printf("[CommandProcessor] AI query from text: '%s'\n", query.c_str());
-            stopListening();
-            return result;
-        }
-    }
-
-    // For other text processing, try to parse as commands
-    // This is a simple implementation - could be enhanced with NLP
+    // Check for simple commands first (high priority)
     if (textLower.indexOf("hang up") >= 0 || textLower.indexOf("hangup") >= 0) {
         CommandResult result;
         result.command = VoiceCommand::HANG_UP;
@@ -208,10 +188,33 @@ CommandResult CommandProcessor::processText(const String& text) {
         return result;
     }
 
-    // TODO: Add more text parsing for CALL/DROP_IN commands
+    // Classify the command (HA_CONTROL vs ASK_AI)
+    VoiceCommand classified = classifyCommand(text);
 
-    Serial.printf("[CommandProcessor] Could not parse text: '%s'\n", text.c_str());
-    return CommandResult();
+    CommandResult result;
+    result.command = classified;
+    result.confidence = 0.9f;  // High confidence for text-based input
+    result.rawText = text;
+
+    if (classified == VoiceCommand::HA_CONTROL) {
+        // Device control command - send to Home Assistant
+        result.haCommand = text;
+        Serial.printf("[CommandProcessor] HA device control: '%s'\n", text.c_str());
+    }
+    else if (classified == VoiceCommand::ASK_AI) {
+        // AI query - send to Ollama
+        // Remove "ask" prefix if present
+        String query = text;
+        if (textLower.startsWith("ask ")) {
+            query = text.substring(4);
+            query.trim();
+        }
+        result.aiQuery = query;
+        Serial.printf("[CommandProcessor] AI query: '%s'\n", query.c_str());
+    }
+
+    stopListening();
+    return result;
 }
 
 CommandResult CommandProcessor::getPartialCommand() const {
@@ -329,4 +332,71 @@ float CommandProcessor::calculateCombinedConfidence() const {
     }
 
     return 0.0f;
+}
+
+VoiceCommand CommandProcessor::classifyCommand(const String& text) {
+    String lower = text;
+    lower.toLowerCase();
+    lower.trim();
+
+    // Device control action verbs
+    const char* actionVerbs[] = {
+        "turn on", "turn off", "switch on", "switch off",
+        "set", "dim", "brighten", "increase", "decrease",
+        "open", "close", "lock", "unlock", "start", "stop"
+    };
+
+    // Device entity types
+    const char* deviceTypes[] = {
+        "light", "lights", "lamp", "lamps",
+        "switch", "switches",
+        "thermostat", "temperature", "heating", "cooling",
+        "fan", "fans", "climate",
+        "door", "doors", "garage",
+        "blind", "blinds", "shade", "shades", "curtain", "curtains"
+    };
+
+    // Check for device control indicators
+    for (const char* verb : actionVerbs) {
+        if (lower.indexOf(verb) >= 0) {
+            // Has action verb, check for device type
+            for (const char* device : deviceTypes) {
+                if (lower.indexOf(device) >= 0) {
+                    Serial.printf("[CommandProcessor] Classified as HA_CONTROL (verb: %s, device: %s)\n",
+                                  verb, device);
+                    return VoiceCommand::HA_CONTROL;
+                }
+            }
+            // Has action but no clear device - still likely control
+            Serial.printf("[CommandProcessor] Classified as HA_CONTROL (action verb: %s)\n", verb);
+            return VoiceCommand::HA_CONTROL;
+        }
+    }
+
+    // Check for question indicators (these suggest AI query)
+    const char* questionWords[] = {
+        "what", "when", "where", "who", "why", "how",
+        "tell me", "explain", "describe", "define"
+    };
+
+    for (const char* question : questionWords) {
+        String questionStr = question;
+        // Check if starts with question word or contains "tell me" / "explain" pattern
+        if (lower.startsWith(questionStr) ||
+            (lower.indexOf(" " + questionStr) == 0) ||
+            lower.indexOf(questionStr + " ") == 0) {
+            Serial.printf("[CommandProcessor] Classified as ASK_AI (question word: %s)\n", question);
+            return VoiceCommand::ASK_AI;
+        }
+    }
+
+    // If contains "ask" keyword, it's AI
+    if (lower.indexOf("ask") >= 0 || lower.indexOf("question") >= 0) {
+        Serial.println("[CommandProcessor] Classified as ASK_AI (contains 'ask' or 'question')");
+        return VoiceCommand::ASK_AI;
+    }
+
+    // When uncertain, default to HA (safer for device control)
+    Serial.println("[CommandProcessor] Defaulting to HA_CONTROL (uncertain classification)");
+    return VoiceCommand::HA_CONTROL;
 }

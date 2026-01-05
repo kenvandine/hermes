@@ -1,8 +1,8 @@
 #include "audio_pipeline.h"
 #include "config.h"
 
-AudioPipeline::AudioPipeline()
-    : i2s(nullptr),
+AudioPipeline::AudioPipeline(HALAudio* audioHal)
+    : audio(audioHal),
       codec(nullptr),
       udp(nullptr),
       wakeWord(nullptr),
@@ -34,22 +34,20 @@ bool AudioPipeline::begin(uint32_t sampleRateHz) {
     Serial.printf("[AudioPipeline] Sample rate: %d Hz\n", sampleRate);
     Serial.printf("[AudioPipeline] Frame size: %d samples (%d ms)\n", frameSize, frameSizeMs);
 
-    // Create I2S manager
-    i2s = new I2SManager();
-
-    // Initialize ES8311 codec first
-    if (!i2s->begin(sampleRate)) {
-        Serial.println("[AudioPipeline] ERROR: Failed to initialize ES8311 codec");
+    // Initialize audio HAL (codec + I2S)
+    if (!audio) {
+        Serial.println("[AudioPipeline] ERROR: No audio HAL provided");
         stop();
         return false;
     }
 
-    // Then initialize I2S microphone and speaker
-    if (!i2s->beginMicrophone(sampleRate) || !i2s->beginSpeaker(sampleRate)) {
-        Serial.println("[AudioPipeline] ERROR: Failed to initialize I2S");
+    if (!audio->begin(sampleRate)) {
+        Serial.println("[AudioPipeline] ERROR: Failed to initialize audio HAL");
         stop();
         return false;
     }
+
+    // Audio HAL handles microphone and speaker initialization internally
 
     // Create Opus codec
     codec = new OpusCodec();
@@ -106,12 +104,8 @@ bool AudioPipeline::begin(uint32_t sampleRateHz) {
 void AudioPipeline::stop() {
     endCall();
 
-    if (i2s) {
-        i2s->stopMicrophone();
-        i2s->stopSpeaker();
-        delete i2s;
-        i2s = nullptr;
-    }
+    // Audio HAL is managed externally, we don't delete it
+    // (it's owned by main.cpp)
 
     if (codec) {
         delete codec;
@@ -180,6 +174,12 @@ AudioMode AudioPipeline::getMode() const {
 }
 
 void AudioPipeline::process() {
+    static bool debugPrinted = false;
+    if (!debugPrinted) {
+        Serial.printf("[AudioPipeline] process() - initialized=%d, mode=%d\n", initialized, (int)mode);
+        debugPrinted = true;
+    }
+
     if (!initialized) {
         return;
     }
@@ -255,20 +255,20 @@ bool AudioPipeline::isInCall() const {
 }
 
 void AudioPipeline::setVolume(uint8_t volume) {
-    if (i2s) {
-        i2s->setVolume(volume);
+    if (audio) {
+        audio->setVolume(volume);
     }
 }
 
 void AudioPipeline::setMicGain(uint8_t gainStep) {
-    if (i2s) {
-        i2s->setMicGain(gainStep);
+    if (audio) {
+        audio->setMicGain(gainStep);
     }
 }
 
 void AudioPipeline::mute(bool enabled) {
-    if (i2s) {
-        i2s->mute(enabled);
+    if (audio) {
+        audio->mute(enabled);
     }
 }
 
@@ -309,10 +309,22 @@ void AudioPipeline::getStats(uint32_t& txPackets, uint32_t& rxPackets, uint32_t&
 // ============================================================================
 
 void AudioPipeline::processIdle() {
+    static bool debugPrinted = false;
+    if (!debugPrinted) {
+        Serial.printf("[AudioPipeline] processIdle() - wakeWordEnabled=%d, wakeWord=%p, isEnabled=%d\n",
+                      wakeWordEnabled, wakeWord, wakeWord ? wakeWord->isEnabled() : 0);
+        debugPrinted = true;
+    }
+
+    // Feed silence to speaker to keep XMOS audio pipeline active
+    // (Some audio processors require bidirectional I2S to enable microphone)
+    memset(speakerFrame, 0, frameSize * sizeof(int16_t));
+    audio->writeSpeaker(speakerFrame, frameSize);
+
     // In idle mode, run wake word detection if enabled
     if (wakeWordEnabled && wakeWord && wakeWord->isEnabled()) {
         // Read from microphone
-        size_t samplesRead = i2s->readMicrophone(micFrame, frameSize);
+        size_t samplesRead = audio->readMicrophone(micFrame, frameSize);
         if (samplesRead > 0) {
             // Process audio through wake word detector
             wakeWord->process(micFrame, samplesRead);
@@ -341,10 +353,10 @@ void AudioPipeline::processLoopback() {
     // Simple loopback: Mic → Speaker (for testing)
 
     // Read from microphone
-    size_t samplesRead = i2s->readMicrophone(micFrame, frameSize);
+    size_t samplesRead = audio->readMicrophone(micFrame, frameSize);
     if (samplesRead > 0) {
         // Write directly to speaker
-        i2s->writeSpeaker(micFrame, samplesRead);
+        audio->writeSpeaker(micFrame, samplesRead);
     }
 }
 
@@ -352,7 +364,7 @@ void AudioPipeline::processTransmit() {
     // Transmit only: Mic → Opus → UDP
 
     // Read from microphone
-    size_t samplesRead = i2s->readMicrophone(micFrame, frameSize);
+    size_t samplesRead = audio->readMicrophone(micFrame, frameSize);
     if (samplesRead >= frameSize) {
         // Encode with Opus
         int encoded = codec->encode(micFrame, frameSize, opusPacket, OPUS_MAX_PACKET_SIZE);
@@ -370,12 +382,12 @@ void AudioPipeline::processReceive() {
     if (speakerBuffer->available() >= frameSize) {
         size_t samplesRead = speakerBuffer->read(speakerFrame, frameSize);
         if (samplesRead > 0) {
-            i2s->writeSpeaker(speakerFrame, samplesRead);
+            audio->writeSpeaker(speakerFrame, samplesRead);
         }
     } else {
         // Not enough data, write silence
         memset(speakerFrame, 0, frameSize * sizeof(int16_t));
-        i2s->writeSpeaker(speakerFrame, frameSize);
+        audio->writeSpeaker(speakerFrame, frameSize);
     }
 }
 
@@ -383,7 +395,7 @@ void AudioPipeline::processCall() {
     // Full duplex: Transmit + Receive
 
     // TRANSMIT PATH: Mic → Opus → UDP
-    size_t samplesRead = i2s->readMicrophone(micFrame, frameSize);
+    size_t samplesRead = audio->readMicrophone(micFrame, frameSize);
     if (samplesRead >= frameSize) {
         int encoded = codec->encode(micFrame, frameSize, opusPacket, OPUS_MAX_PACKET_SIZE);
         if (encoded > 0) {
@@ -395,12 +407,12 @@ void AudioPipeline::processCall() {
     if (speakerBuffer->available() >= frameSize) {
         size_t samplesToPlay = speakerBuffer->read(speakerFrame, frameSize);
         if (samplesToPlay > 0) {
-            i2s->writeSpeaker(speakerFrame, samplesToPlay);
+            audio->writeSpeaker(speakerFrame, samplesToPlay);
         }
     } else {
         // Jitter buffer underrun - play silence
         memset(speakerFrame, 0, frameSize * sizeof(int16_t));
-        i2s->writeSpeaker(speakerFrame, frameSize);
+        audio->writeSpeaker(speakerFrame, frameSize);
     }
 }
 

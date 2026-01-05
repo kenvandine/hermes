@@ -22,7 +22,9 @@ def main():
     mqtt_password = get_env_or_default('MQTT_PASSWORD', 'your-mqtt-password')
     ollama_host = get_env_or_default('OLLAMA_HOST', 'http://your-server-ip:11434')
     piper_host = get_env_or_default('PIPER_HOST', 'http://your-server-ip:10200')
+    whisper_host = get_env_or_default('WHISPER_HOST', 'http://your-server-ip:9000')
     ha_host = get_env_or_default('HA_HOST', 'http://your-server-ip:8123')
+    ha_token = get_env_or_default('HA_TOKEN', 'your_ha_token_here')
 
     # Generate header file content
     header_content = f"""// Auto-generated configuration file
@@ -48,7 +50,9 @@ def main():
 // AI Services Configuration
 #define BUILD_OLLAMA_HOST "{ollama_host}"
 #define BUILD_PIPER_HOST "{piper_host}"
+#define BUILD_WHISPER_HOST "{whisper_host}"
 #define BUILD_HA_HOST "{ha_host}"
+#define BUILD_HA_TOKEN "{ha_token}"
 
 #endif // BUILD_CONFIG_H
 """
@@ -67,7 +71,11 @@ def main():
     print(f"[Config]   MQTT User: {mqtt_username}")
     print(f"[Config]   Ollama: {ollama_host}")
     print(f"[Config]   Piper: {piper_host}")
+    print(f"[Config]   Whisper: {whisper_host}")
     print(f"[Config]   Home Assistant: {ha_host}")
+    # Mask HA token in output for security
+    token_masked = "********" if ha_token != "your_ha_token_here" else "not configured"
+    print(f"[Config]   HA Token: {token_masked}")
 
 if __name__ == '__main__':
     main()
