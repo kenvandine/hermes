@@ -56,6 +56,7 @@
 #include "ai/ollama_client.h"
 #include "ai/tts_engine.h"
 #include "ai/ai_manager.h"
+#include "ai/whisper_client.h"
 #include "homeassistant/ha_conversation.h"
 #endif
 
@@ -95,6 +96,7 @@ UIManager* uiManager = nullptr;
 OllamaClient* ollamaClient = nullptr;
 TTSEngine* ttsEngine = nullptr;
 AIManager* aiManager = nullptr;
+WhisperClient* whisperClient = nullptr;
 HAConversation* haConversation = nullptr;
 #endif
 
@@ -109,6 +111,15 @@ TaskHandle_t uiTaskHandle = NULL;
 TaskHandle_t audioTaskHandle = NULL;
 #endif
 TaskHandle_t mqttTaskHandle = NULL;
+
+// Audio buffering for Whisper STT
+#ifndef DISABLE_AUDIO_TEMP
+#define WHISPER_BUFFER_SECONDS 4
+#define WHISPER_BUFFER_SIZE (AUDIO_SAMPLE_RATE * WHISPER_BUFFER_SECONDS)
+int16_t* whisperAudioBuffer = nullptr;
+size_t whisperBufferIndex = 0;
+bool isCapturingForWhisper = false;
+#endif
 
 // ============================================================================
 // FORWARD DECLARATIONS
@@ -127,6 +138,8 @@ void setupCallManager();
 void setupVoiceCommands();
 void setupAI();
 void processHACommand(const String& command);
+void startWhisperCapture();
+void processWhisperAudio();
 #endif
 void printSystemInfo();
 
@@ -632,10 +645,15 @@ void setupAudio() {
 
     // Register wake word callback
     audioPipeline->onWakeWordDetected([]() {
-        Serial.println("[AUDIO] Wake word callback triggered!");
+        Serial.println("[AUDIO] Wake word detected!");
         if (stateMachine) {
             // Transition to LISTENING state
             stateMachine->setState(AppState::LISTENING);
+        }
+
+        // Start capturing audio for Whisper STT
+        if (WHISPER_ENABLED && whisperClient) {
+            startWhisperCapture();
         }
     });
 
@@ -756,7 +774,39 @@ void setupVoiceCommands() {
         Serial.printf("[VoiceCommands] Loaded %d room names\n", devices.size());
     }
 
-    // Create speech recognizer
+    // Initialize Whisper client for speech-to-text
+    if (WHISPER_ENABLED) {
+        Serial.println("[Whisper] Initializing Whisper speech recognition...");
+        whisperClient = new WhisperClient();
+
+        if (!whisperClient->begin(WHISPER_SERVER_URL, WHISPER_SERVER_PORT)) {
+            Serial.println("[Whisper] ✗ Failed to initialize Whisper client");
+            delete whisperClient;
+            whisperClient = nullptr;
+        } else {
+            Serial.printf("[Whisper] ✓ Whisper client initialized (%s:%d)\n",
+                         WHISPER_SERVER_URL, WHISPER_SERVER_PORT);
+
+            // Test connection
+            if (whisperClient->testConnection()) {
+                Serial.println("[Whisper] ✓ Connection to Whisper server verified");
+            } else {
+                Serial.println("[Whisper] ⚠ Whisper server connection test failed");
+            }
+
+            // Allocate audio buffer for Whisper
+            whisperAudioBuffer = (int16_t*)malloc(WHISPER_BUFFER_SIZE * sizeof(int16_t));
+            if (!whisperAudioBuffer) {
+                Serial.println("[Whisper] ✗ Failed to allocate audio buffer");
+                delete whisperClient;
+                whisperClient = nullptr;
+            } else {
+                Serial.printf("[Whisper] ✓ Allocated %d second audio buffer\n", WHISPER_BUFFER_SECONDS);
+            }
+        }
+    }
+
+    // Create speech recognizer (for keyword spotting fallback)
     speechRecognizer = new SpeechRecognizer();
     if (speechRecognizer->begin(AUDIO_SAMPLE_RATE, COMMAND_THRESHOLD)) {
         Serial.println("[VoiceCommands] ✓ Speech recognizer initialized");
@@ -827,6 +877,108 @@ void setupVoiceCommands() {
 }
 
 #ifndef DISABLE_AUDIO_TEMP
+void startWhisperCapture() {
+    if (!whisperAudioBuffer || !whisperClient) {
+        Serial.println("[Whisper] Cannot start capture - buffer or client not initialized");
+        return;
+    }
+
+    Serial.println("[Whisper] Starting audio capture...");
+    whisperBufferIndex = 0;
+    isCapturingForWhisper = true;
+}
+
+void processWhisperAudio() {
+    if (!whisperClient || !whisperAudioBuffer) {
+        Serial.println("[Whisper] Cannot process audio - not initialized");
+        return;
+    }
+
+    if (whisperBufferIndex == 0) {
+        Serial.println("[Whisper] No audio captured");
+        return;
+    }
+
+    Serial.printf("[Whisper] Processing %d samples...\n", whisperBufferIndex);
+
+    // Transcribe audio
+    WhisperClient::Response response = whisperClient->transcribe(
+        whisperAudioBuffer,
+        whisperBufferIndex,
+        AUDIO_SAMPLE_RATE,
+        1  // mono
+    );
+
+    if (response.success && !response.text.isEmpty()) {
+        Serial.printf("[Whisper] Transcription: \"%s\" (%.0fms, confidence: %.2f)\n",
+                      response.text.c_str(), response.durationMs, response.confidence);
+
+        // Process transcribed text with command processor
+        if (commandProcessor) {
+            commandProcessor->startListening(1000);  // Short timeout since we already have text
+            CommandResult result = commandProcessor->processText(response.text);
+
+            if (result.isValid()) {
+                Serial.printf("[Whisper] Executing command: %s\n", result.toString().c_str());
+
+                // Execute command
+                switch (result.command) {
+                    case VoiceCommand::DROP_IN:
+                    case VoiceCommand::CALL:
+                        if (callManager) {
+                            callManager->initiateCall(result.targetRoom);
+                        }
+                        break;
+
+                    case VoiceCommand::HANG_UP:
+                        if (callManager) {
+                            callManager->hangupCall();
+                        }
+                        break;
+
+                    case VoiceCommand::CANCEL:
+                        if (stateMachine) {
+                            stateMachine->setState(AppState::IDLE);
+                        }
+                        break;
+
+                    case VoiceCommand::ASK_AI:
+                        if (aiManager && !result.aiQuery.isEmpty()) {
+                            aiManager->processQuery(result.aiQuery);
+                        }
+                        break;
+
+                    case VoiceCommand::HA_CONTROL:
+                        if (haConversation && !result.haCommand.isEmpty()) {
+                            processHACommand(result.haCommand);
+                        }
+                        break;
+
+                    default:
+                        Serial.println("[Whisper] Unknown command type");
+                        break;
+                }
+            } else {
+                Serial.println("[Whisper] Could not parse command from transcription");
+                // Return to idle
+                if (stateMachine) {
+                    stateMachine->setState(AppState::IDLE);
+                }
+            }
+        }
+    } else {
+        Serial.printf("[Whisper] Transcription failed: %s\n", response.error.c_str());
+        // Return to idle on failure
+        if (stateMachine) {
+            stateMachine->setState(AppState::IDLE);
+        }
+    }
+
+    // Reset capture state
+    whisperBufferIndex = 0;
+    isCapturingForWhisper = false;
+}
+
 void processHACommand(const String& command) {
     if (!haConversation) {
         Serial.println("[HA] No conversation client available");
@@ -1029,9 +1181,34 @@ void audioTask(void* parameter) {
 
         // Phase 6: Process speech recognition when in LISTENING state
         if (stateMachine && stateMachine->getState() == AppState::LISTENING) {
-            if (speechRecognizer && speechRecognizer->isEnabled()) {
+            HALAudio* audio = audioPipeline->getAudio();
+
+            // Whisper STT: Buffer audio for transcription
+            if (WHISPER_ENABLED && isCapturingForWhisper && whisperClient && whisperAudioBuffer) {
+                if (audio && audioFrame) {
+                    size_t samplesRead = audio->readMicrophone(audioFrame, 320);
+                    if (samplesRead > 0) {
+                        // Buffer audio samples
+                        size_t samplesAvailable = WHISPER_BUFFER_SIZE - whisperBufferIndex;
+                        size_t samplesToCopy = (samplesRead < samplesAvailable) ? samplesRead : samplesAvailable;
+
+                        if (samplesToCopy > 0) {
+                            memcpy(&whisperAudioBuffer[whisperBufferIndex], audioFrame, samplesToCopy * sizeof(int16_t));
+                            whisperBufferIndex += samplesToCopy;
+                        }
+
+                        // Check if buffer is full
+                        if (whisperBufferIndex >= WHISPER_BUFFER_SIZE) {
+                            Serial.println("[Whisper] Buffer full, processing audio...");
+                            isCapturingForWhisper = false;
+                            processWhisperAudio();
+                        }
+                    }
+                }
+            }
+            // Fallback to keyword spotting if Whisper is disabled
+            else if (speechRecognizer && speechRecognizer->isEnabled()) {
                 // Read audio from microphone for speech recognition
-                HALAudio* audio = audioPipeline->getAudio();
                 if (audio && audioFrame) {
                     size_t samplesRead = audio->readMicrophone(audioFrame, 320);
                     if (samplesRead > 0) {
@@ -1040,7 +1217,7 @@ void audioTask(void* parameter) {
                 }
             }
 
-            // Check for command timeout
+            // Check for command timeout or buffer completion
             if (commandProcessor && commandProcessor->hasTimedOut()) {
                 // On timeout, check if we have a partial AI query
                 CommandResult partial = commandProcessor->getPartialCommand();

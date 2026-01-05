@@ -267,7 +267,7 @@
 // Whisper speech recognition server (optional)
 #define WHISPER_SERVER_URL      "http://192.168.1.52"  // Whisper LXD container IP
 #define WHISPER_SERVER_PORT     9000                   // Whisper API port
-#define WHISPER_ENABLED         false                  // Enable server-side STT
+#define WHISPER_ENABLED         true                   // Enable Whisper speech-to-text
 
 // Home Assistant API Configuration
 #ifndef HA_HOST

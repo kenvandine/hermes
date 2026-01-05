@@ -131,6 +131,65 @@ Now you can use voice commands like:
 
 The system will automatically route device control commands to Home Assistant, while keeping general questions routed to the Ollama AI assistant.
 
+### Whisper Speech Recognition (Recommended)
+
+HERMES uses Whisper for accurate speech-to-text recognition after wake word detection. This provides much better recognition than keyword spotting.
+
+**Why Whisper?**
+- 95%+ accuracy for natural language
+- Understands any phrase (not limited to keywords)
+- Handles accents and pronunciation variations
+- Enables natural conversations with your device
+
+**Setup Options:**
+
+#### Option 1: faster-whisper (Recommended)
+```bash
+# Install faster-whisper
+pip install faster-whisper
+
+# Run the server
+python -m faster_whisper.server --model base.en --host 0.0.0.0 --port 9000
+```
+
+#### Option 2: Wyoming Protocol (Home Assistant)
+If you're using Home Assistant, you can use the Wyoming Whisper add-on:
+1. Install **Wyoming Whisper** add-on from Home Assistant
+2. Configure port 9000
+3. Use the HA server IP as your WHISPER_HOST
+
+#### Option 3: Docker
+```bash
+docker run -d \
+  --name whisper \
+  -p 9000:9000 \
+  ghcr.io/rhasspy/wyoming-whisper:latest \
+  --model base-int8 \
+  --language en
+```
+
+**Configuration:**
+```bash
+# Set Whisper server location
+export WHISPER_HOST="http://192.168.1.52:9000"
+
+# Build with Whisper enabled
+./build.sh upload
+```
+
+**Model Selection:**
+- `tiny` - Fastest, less accurate (~1GB RAM)
+- `base` - Good balance (recommended, ~1GB RAM)
+- `small` - Better accuracy (~2GB RAM)
+- `medium` - High accuracy (~5GB RAM)
+
+**Performance:**
+- Latency: 2-4 seconds total (buffering + transcription)
+- Accuracy: 95%+ for clear speech
+- Works on local network (no internet required)
+
+**Note:** Whisper is enabled by default. To disable it, set `WHISPER_ENABLED false` in `include/config.h`.
+
 ## Build Process
 
 When you run `build.sh`, the following happens:

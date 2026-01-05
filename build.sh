@@ -32,9 +32,10 @@ export MQTT_PORT="${MQTT_PORT:-1883}"
 export MQTT_USERNAME="${MQTT_USERNAME:-homeassistant}"
 export MQTT_PASSWORD="${MQTT_PASSWORD:-your-mqtt-password}"
 
-# AI Services Configuration (for future use when audio features are enabled)
+# AI Services Configuration
 export OLLAMA_HOST="${OLLAMA_HOST:-http://your-server-ip:11434}"
 export PIPER_HOST="${PIPER_HOST:-http://your-server-ip:10200}"
+export WHISPER_HOST="${WHISPER_HOST:-http://your-server-ip:9000}"
 export HA_HOST="${HA_HOST:-http://your-server-ip:8123}"
 export HA_TOKEN="${HA_TOKEN:-your_ha_token_here}"
 
@@ -63,6 +64,7 @@ echo ""
 echo "AI Services:"
 echo "  Ollama:             $OLLAMA_HOST"
 echo "  Piper:              $PIPER_HOST"
+echo "  Whisper:            $WHISPER_HOST"
 echo "  Home Assistant:     $HA_HOST"
 if [ "$HA_TOKEN" != "your_ha_token_here" ]; then
     echo "  HA Token:           ********"

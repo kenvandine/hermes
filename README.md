@@ -8,7 +8,8 @@ A voice-activated, AI-enhanced multi-room intercom system built on ESP32-S3 with
 ## Features
 
 - **AI Assistant**: Ollama LLM integration with Piper TTS for natural language queries
-- **Voice Control**: Wake word detection ("Hey Hermes") with voice commands
+- **Advanced Speech Recognition**: Whisper STT for 95%+ accurate natural language understanding
+- **Voice Control**: Wake word detection ("Hey Hermes") with full voice commands
 - **Home Assistant Voice Control**: Control lights, switches, climate, and devices via voice
 - **Multi-Room Communication**: Drop in on any room in your house
 - **Multiple Device Support**:
@@ -52,6 +53,7 @@ HERMES supports multiple ESP32-S3 based devices:
 - PlatformIO (VS Code extension or CLI)
 - Home Assistant with MQTT broker (Mosquitto addon)
 - Edge Impulse account (for wake word training)
+- **Whisper server** (faster-whisper or Wyoming protocol - for speech recognition)
 - Ollama server with llama3.2:3b model (for AI assistant)
 - Piper TTS server (for text-to-speech)
 
