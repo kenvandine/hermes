@@ -46,11 +46,11 @@ bool HALAudioNabuCasa::begin(uint32_t sampleRate) {
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);  // 400kHz
     Serial.println("[HAL-Audio-NabuCasa] ✓ I2C initialized");
 
-    // Reset XMOS voice kit (match ESPHome timing)
+    // Reset XMOS voice kit (match ESPHome sequence exactly)
     pinMode(PIN_VOICE_KIT_RESET, OUTPUT);
-    digitalWrite(PIN_VOICE_KIT_RESET, LOW);
-    delay(100);
-    digitalWrite(PIN_VOICE_KIT_RESET, HIGH);
+    digitalWrite(PIN_VOICE_KIT_RESET, HIGH);  // HIGH first (ESPHome does this)
+    delay(1);
+    digitalWrite(PIN_VOICE_KIT_RESET, LOW);   // Then LOW
     Serial.println("[HAL-Audio-NabuCasa] Waiting for XMOS to boot (3 seconds)...");
     delay(3000);  // Wait for XMOS to fully boot (per ESPHome)
     Serial.println("[HAL-Audio-NabuCasa] ✓ XMOS reset complete");
