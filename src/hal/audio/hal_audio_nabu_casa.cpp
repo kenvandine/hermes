@@ -85,9 +85,9 @@ bool HALAudioNabuCasa::begin(uint32_t sampleRate) {
 bool HALAudioNabuCasa::beginMicrophone(uint32_t sampleRate) {
     Serial.printf("[HAL-Audio-NabuCasa] Initializing microphone (I2S_NUM_0, %dHz)...\n", sampleRate);
 
-    // I2S configuration for microphone input (XMOS is master)
+    // I2S configuration for microphone input (ESP32 is SLAVE, XMOS is master)
     i2s_config_t i2s_mic_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),  // RX mode
+        .mode = (i2s_mode_t)(I2S_MODE_SLAVE | I2S_MODE_RX),  // SLAVE RX mode
         .sample_rate = sampleRate,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,  // 32-bit as per ESPHome config
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,  // Stereo
@@ -134,9 +134,9 @@ bool HALAudioNabuCasa::beginMicrophone(uint32_t sampleRate) {
 bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
     Serial.printf("[HAL-Audio-NabuCasa] Initializing speaker (I2S_NUM_1, %dHz)...\n", sampleRate);
 
-    // I2S configuration for speaker output (XMOS is master)
+    // I2S configuration for speaker output (ESP32 is SLAVE, XMOS/AIC3204 is master)
     i2s_config_t i2s_spk_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),  // TX mode
+        .mode = (i2s_mode_t)(I2S_MODE_SLAVE | I2S_MODE_TX),  // SLAVE TX mode
         .sample_rate = sampleRate,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,  // 32-bit as per ESPHome config
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,  // Stereo
@@ -203,6 +203,15 @@ size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
 
     // Convert 32-bit stereo to 16-bit mono (average channels, downsample)
     size_t samplesRead = bytesRead / (sizeof(int32_t) * 2);
+
+    // Debug: Check first few samples
+    static bool debugPrinted = false;
+    if (!debugPrinted && samplesRead > 0) {
+        Serial.printf("[HAL-Audio-NabuCasa] First I2S samples (32-bit): L=%d, R=%d\n",
+                      tempBuffer[0], tempBuffer[1]);
+        debugPrinted = true;
+    }
+
     for (size_t i = 0; i < samplesRead && i < sampleCount; i++) {
         // Average left and right channels, then downshift from 32-bit to 16-bit
         int64_t left = tempBuffer[i * 2];
