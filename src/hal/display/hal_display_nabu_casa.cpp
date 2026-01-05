@@ -124,24 +124,17 @@ void HALDisplayNabuCasa::updateAnimation() {
             break;
 
         case AppState::LISTENING:
-            // Pulsing bright blue
-            {
-                uint8_t brightness = beatsin8(60, 128, 255, 0, animationPhase_);
-                CRGB color = CRGB(0, 0, brightness);
-                setAllLEDs(color);
-            }
+            // Solid green (listening/active)
+            setAllLEDs(CRGB::Green);
             break;
 
         case AppState::AI_QUERY:
         case AppState::AI_RESPONSE:
-            // Spinning animation for AI processing
+            // Pulsing green for AI processing
             {
-                uint8_t pos = (animationPhase_ / 4) % DEVICE_LED_COUNT;
-                FastLED.clear();
-                for (int i = 0; i < 3; i++) {
-                    uint8_t ledIndex = (pos + i) % DEVICE_LED_COUNT;
-                    leds_[ledIndex] = CRGB(0, 150 - i * 50, 200 - i * 50);
-                }
+                uint8_t brightness = beatsin8(60, 128, 255, 0, animationPhase_);
+                CRGB color = CRGB(0, brightness, 0);
+                setAllLEDs(color);
             }
             break;
 
