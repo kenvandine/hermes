@@ -207,8 +207,16 @@ size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
         return 0;
     }
 
+    if (callCount <= 5) {
+        Serial.printf("[HAL-Audio-NabuCasa] About to call i2s_read, bytesToRead=%d\n", bytesToRead);
+    }
+
     size_t bytesRead = 0;
     esp_err_t err = i2s_read(I2S_NUM_0, tempBuffer, bytesToRead, &bytesRead, portMAX_DELAY);
+
+    if (callCount <= 5) {
+        Serial.printf("[HAL-Audio-NabuCasa] i2s_read returned: err=%d, bytesRead=%d\n", err, bytesRead);
+    }
 
     // Debug: Log I2S read results
     static int readCount = 0;
