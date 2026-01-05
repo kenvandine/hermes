@@ -51,19 +51,22 @@
 #define PIN_VOICE_KIT_RESET     4       // XMOS reset pin
 
 // ============================================================================
-// Physical Control Pins (TODO: Verify these from schematic)
+// Physical Control Pins
 // ============================================================================
 
-// Multi-function button
-#define PIN_BUTTON_ACTION       -1      // Main action button (TODO)
+// Center button (multi-function: reset, stop, converse without wake word)
+#define PIN_BUTTON_ACTION       0       // Center button (inverted logic)
 
 // Rotary encoder for volume control
-#define PIN_ROTARY_A            -1      // Rotary encoder A (TODO)
-#define PIN_ROTARY_B            -1      // Rotary encoder B (TODO)
-#define PIN_ROTARY_BUTTON       -1      // Rotary encoder button (TODO)
+#define PIN_ROTARY_CLK          16      // Rotary encoder CLK (Pin A)
+#define PIN_ROTARY_DT           18      // Rotary encoder DT (Pin B)
+#define PIN_ROTARY_BUTTON       0       // Rotary button (same as center button)
 
 // Hardware mute switch
-#define PIN_MUTE_SWITCH         -1      // Mute switch (TODO)
+#define PIN_MUTE_SWITCH         3       // Hardware mute switch
+
+// Audio jack detection
+#define PIN_AUDIO_JACK_DETECT   17      // Audio jack plugged sensor
 
 // ============================================================================
 // Not Used (No display/touchscreen)
