@@ -238,6 +238,14 @@ void WakeWord::reset() {
     lastDetectionTime = 0;
 }
 
+void WakeWord::clearBuffer() {
+    if (rollingBuffer && initialized) {
+        memset(rollingBuffer, 0, rollingBufferSize * sizeof(int16_t));
+        rollingBufferPos = 0;
+        Serial.println("[WakeWord] Buffer cleared");
+    }
+}
+
 void WakeWord::setThreshold(float thresh) {
     threshold = constrain(thresh, 0.0f, 1.0f);
     Serial.printf("[WakeWord] Threshold set to: %.2f\n", threshold);

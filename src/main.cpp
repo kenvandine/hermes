@@ -237,12 +237,19 @@ void loop() {
         char cmd = Serial.read();
 
         if (cmd == 'r' && audioPipeline) {
-            // Record: Save current wake word buffer to SPIFFS
+            // Record: Clear buffer and capture fresh audio
             WakeWord* ww = audioPipeline->getWakeWord();
             if (ww) {
-                Serial.println("\n[CMD] Saving wake word buffer to /recording.wav...");
+                Serial.println("\n[CMD] Clearing buffer and recording fresh audio...");
+                ww->clearBuffer();
+                Serial.println("[CMD] Say your wake word now!");
+
+                // Wait for buffer to fill with fresh audio (1 second)
+                delay(1000);
+
+                Serial.println("[CMD] Saving to /recording.wav...");
                 if (ww->saveBufferToWAV("/recording.wav")) {
-                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download or 'p' to play");
+                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download");
                 } else {
                     Serial.println("[CMD] ✗ Failed to save recording");
                 }

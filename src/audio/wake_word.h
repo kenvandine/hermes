@@ -60,6 +60,12 @@ public:
     void reset();
 
     /**
+     * Clear the rolling buffer (fill with zeros)
+     * Use this before recording to start with fresh audio
+     */
+    void clearBuffer();
+
+    /**
      * Set detection threshold
      * @param threshold 0.0 (always detect) to 1.0 (never detect)
      */
