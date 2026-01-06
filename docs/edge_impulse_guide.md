@@ -64,6 +64,13 @@ You need to record samples of:
    - Data acquisition → Upload data
    - Label appropriately
 
+**Important - Use Only Two Classes**:
+- `wake_word` (or `hey_hermes`) - your wake phrase
+- `noise` - everything else (silence, music, speech, household sounds)
+
+Do NOT create an `unknown` class. This causes confusion and significantly reduces
+accuracy. Any audio that isn't the wake word should be labeled as `noise`.
+
 **Option C: Use Your ESP32 Device**
 
 1. Flash the data collection firmware
@@ -93,50 +100,63 @@ You need to record samples of:
 
 1. Go to **MFCC** tab
 
-2. Configure parameters:
-   - **Frame length**: 0.02 (20ms)
+2. Configure parameters (optimized for speech-based wake words):
+   - **Frame length**: 0.025 (25ms)
    - **Frame stride**: 0.01 (10ms)
-   - **Filter number**: 32
+   - **Filter number**: 13
    - **FFT length**: 512
-   - **Low frequency**: 300 Hz
-   - **High frequency**: 8000 Hz
-   - **Noise floor**: -52 dB
+   - **Low frequency**: 200 Hz
+   - **High frequency**: 3500 Hz
+   - **Noise floor**: -45 dB
+
+   > **Note**: These parameters focus on the human speech frequency range (200-3500 Hz)
+   > and use 13 MFCC filters, which is standard for speech recognition tasks. This helps
+   > the model distinguish speech patterns from background noise more effectively.
 
 3. Click **Save parameters**
 
 4. Click **Generate features**
    - Wait for processing
-   - Verify feature explorer shows good separation
+   - Verify feature explorer shows good separation between classes
+   - **Important**: The two classes should form distinct clusters. If they overlap
+     heavily, consider adjusting parameters or improving data quality.
 
 ## Step 5: Train Neural Network
 
 1. Go to **NN Classifier** tab
 
 2. Configure network:
-   - **Number of training cycles**: 100
-   - **Learning rate**: 0.005
+   - **Number of training cycles**: 150
+   - **Learning rate**: 0.001
    - **Validation set size**: 20%
+   - **Auto-balance dataset**: Enabled (recommended)
 
    **Neural network architecture**:
    ```
    Input layer (auto)
-   Dense layer: 20 neurons, ReLU
-   Dropout: 0.25
-   Dense layer: 10 neurons, ReLU
+   Dense layer: 16 neurons, ReLU
+   Dropout: 0.3
+   Dense layer: 8 neurons, ReLU
+   Dropout: 0.3
    Output layer: 2 neurons (wake_word, noise), Softmax
    ```
+
+   **Data augmentation** (enable these for better generalization):
+   - **Add noise**: 0.1
+   - **Time shift range (ms)**: 50
 
 3. Click **Start training**
 
 4. Review results:
-   - **Target accuracy**: >95%
-   - Check confusion matrix
-   - Look for overfitting (training vs validation accuracy)
+   - **Target accuracy**: >90%
+   - Check confusion matrix - both classes should have >85% correct
+   - Look for overfitting (large gap between training vs validation accuracy)
 
 5. If accuracy is low:
-   - Collect more diverse samples
-   - Adjust network architecture
-   - Increase training cycles
+   - First check feature explorer for class separation
+   - Collect more diverse samples (different speakers, distances, volumes)
+   - Try adjusting MFCC parameters
+   - Increase training cycles to 200
 
 ## Step 6: Test Model
 
@@ -239,16 +259,22 @@ After deployment, you may need to adjust:
 
 ### Low Accuracy
 
+- **Check feature explorer first**
+  - If classes overlap heavily, no neural network will help
+  - Adjust MFCC parameters until you see separation
+  - Try narrowing frequency range (200-3500 Hz for speech)
+
+- **Using more than two classes?**
+  - Remove any `unknown` class - merge into `noise`
+  - Wake word detection should be binary only
+
 - **Collect more diverse training data**
   - Different speakers, environments, volumes
 
-- **Increase network complexity**
-  - Add more neurons to dense layers
-  - Add more layers
-
 - **Adjust MFCC parameters**
-  - Try different frame lengths
-  - Experiment with filter numbers
+  - Reduce filter number (13 is standard for speech)
+  - Narrow frequency range to speech fundamentals
+  - Adjust noise floor if recordings are quiet
 
 ### False Positives
 
