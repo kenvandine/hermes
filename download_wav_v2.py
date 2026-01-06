@@ -6,7 +6,7 @@ import serial
 import time
 import sys
 
-SERIAL_PORT = "/dev/ttyACM1"
+SERIAL_PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 
 

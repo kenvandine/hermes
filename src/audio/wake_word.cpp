@@ -3,7 +3,7 @@
 #include <SPIFFS.h>
 
 // Edge Impulse wake word model
-#include <Hermes_Wake_Word_inferencing.h>
+#include <Hey_Hermes_-_Wake_Word_inferencing.h>
 
 // Override Edge Impulse memory allocation functions to use PSRAM
 // These replace the weak symbols in edge-impulse-sdk/porting/clib/ei_classifier_porting.cpp
