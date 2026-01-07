@@ -46,7 +46,7 @@
 #include "edge-impulse-sdk/classifier/inferencing_engines/engines.h"
 #include "edge-impulse-sdk/classifier/postprocessing/ei_postprocessing_common.h"
 
-const char* ei_classifier_inferencing_categories_866715_8[] = { "hey_hermes", "noise" };
+const char* ei_classifier_inferencing_categories_866715_8[] = { "hermes", "noise" };
 
 ei_dsp_named_axis_t ei_dsp_config_866715_44_named_axes[] = {
     { .name = "Signal", .axis = 0 }
@@ -149,7 +149,7 @@ const ei_impulse_t impulse_866715_8 = {
     .project_name = "Hey Hermes - Wake Word",
     .impulse_id = 8,
     .impulse_name = "Impulse #8",
-    .deploy_version = 9,
+    .deploy_version = 10,
 
     .nn_input_frame_size = 1274,
     .raw_sample_count = 16000,
