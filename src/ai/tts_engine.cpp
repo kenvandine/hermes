@@ -187,8 +187,7 @@ bool TTSEngine::speakCloud(const String& text) {
 }
 
 bool TTSEngine::streamPiperAudio(const String& text) {
-    // Piper Wyoming protocol - raw TCP with HTTP/0.9 style response
-    // HTTPClient doesn't work because the server returns raw audio without HTTP headers
+    // Piper responds with raw WAV audio when sent plain text
 
     Serial.printf("[TTS] Connecting to: %s:%d\n", piperServerHost.c_str(), piperServerPort);
 
@@ -207,7 +206,7 @@ bool TTSEngine::streamPiperAudio(const String& text) {
     speaking = true;
     status = STREAMING;
 
-    // Wyoming/Piper protocol: just send raw text, receive raw audio
+    // Send plain text - Piper responds with WAV
     Serial.printf("[TTS] Sending text: %s\n", text.substring(0, 50).c_str());
     client.println(text);
     client.flush();
@@ -227,37 +226,59 @@ bool TTSEngine::streamPiperAudio(const String& text) {
 
     Serial.println("[TTS] Receiving audio data...");
 
-    // Read and parse WAV header
-    uint8_t wavHeader[44];
+    // Read first 64 bytes to analyze the response
+    uint8_t headerBuf[64];
     size_t headerRead = 0;
-    timeout = millis() + 5000;
-    while (headerRead < 44 && (client.connected() || client.available()) && millis() < timeout) {
+    while (headerRead < 64 && (client.connected() || client.available()) && millis() < timeout) {
         if (client.available()) {
-            wavHeader[headerRead++] = client.read();
+            headerBuf[headerRead++] = client.read();
         } else {
             delay(1);
         }
     }
 
-    // Verify WAV header
-    if (headerRead < 44 || memcmp(wavHeader, "RIFF", 4) != 0) {
-        Serial.printf("[TTS] Invalid WAV header (got %d bytes, first 4: %c%c%c%c)\n",
-                      headerRead,
-                      headerRead > 0 ? wavHeader[0] : '?',
-                      headerRead > 1 ? wavHeader[1] : '?',
-                      headerRead > 2 ? wavHeader[2] : '?',
-                      headerRead > 3 ? wavHeader[3] : '?');
+    // Debug: dump first 64 bytes as hex
+    Serial.print("[TTS] First 64 bytes: ");
+    for (int i = 0; i < 64 && i < (int)headerRead; i++) {
+        Serial.printf("%02X ", headerBuf[i]);
+    }
+    Serial.println();
+
+    // Also show as ASCII where printable
+    Serial.print("[TTS] ASCII: ");
+    for (int i = 0; i < 64 && i < (int)headerRead; i++) {
+        char c = headerBuf[i];
+        Serial.print((c >= 32 && c < 127) ? c : '.');
+    }
+    Serial.println();
+
+    // Parse WAV header
+    if (headerRead < 44 || memcmp(headerBuf, "RIFF", 4) != 0) {
+        Serial.printf("[TTS] Not a WAV file (first 4 bytes: %02X %02X %02X %02X)\n",
+                      headerBuf[0], headerBuf[1], headerBuf[2], headerBuf[3]);
         errorMessage = "Invalid audio format";
         client.stop();
         return false;
     }
 
-    // Extract WAV parameters
-    uint32_t dataSize = *((uint32_t*)(wavHeader + 40));
-    uint32_t sampleRate = *((uint32_t*)(wavHeader + 24));
-    uint16_t bitsPerSample = *((uint16_t*)(wavHeader + 34));
+    // Standard WAV header layout (assuming no extra chunks)
+    uint32_t sampleRate = *((uint32_t*)(headerBuf + 24));
+    uint16_t bitsPerSample = *((uint16_t*)(headerBuf + 34));
+    uint16_t numChannels = *((uint16_t*)(headerBuf + 22));
+    uint32_t dataSize = *((uint32_t*)(headerBuf + 40));
 
-    Serial.printf("[TTS] WAV: %dHz, %d-bit, %d bytes\n", sampleRate, bitsPerSample, dataSize);
+    Serial.printf("[TTS] WAV: %d ch, %dHz, %d-bit, data=%d bytes\n",
+                  numChannels, sampleRate, bitsPerSample, dataSize);
+
+    // Check if 'data' chunk is at expected position
+    if (memcmp(headerBuf + 36, "data", 4) != 0) {
+        Serial.printf("[TTS] Warning: Expected 'data' at offset 36, got: %c%c%c%c\n",
+                      headerBuf[36], headerBuf[37], headerBuf[38], headerBuf[39]);
+    }
+
+    // Audio data starts at offset 44 - we already read some into headerBuf
+    size_t audioOffset = 44;
+    size_t audioInHeader = headerRead - audioOffset;
 
     // Check if audio pipeline is available
     if (!audioPipeline) {
@@ -274,100 +295,103 @@ bool TTSEngine::streamPiperAudio(const String& text) {
     HALAudio* audio = audioPipeline->getAudio();
 
     // Nabu Casa speaker runs at fixed 48kHz (XMOS I2S master)
-    // getSampleRate() returns requested rate, not actual hardware rate
     const uint32_t speakerRate = 48000;
-
-    // Calculate resampling ratio: how many input samples per output sample
-    // For 22050->48000: ratio = 22050/48000 = 0.459 (upsample, need more outputs)
-    float resampleRatio = (float)sampleRate / (float)speakerRate;
-    Serial.printf("[TTS] Resampling from %dHz to %dHz (ratio %.3f)\n",
-                  sampleRate, speakerRate, resampleRatio);
 
     Serial.printf("[TTS] Speaker ready: %s\n", audio->isSpeakerReady() ? "yes" : "no");
 
-    // Use static buffers to avoid stack overflow in Audio Task
-    // Input buffer small, output buffer larger for upsampling (22050->48000 = 2.17x)
-    static const size_t inputBufSize = 256;
-    static const size_t outputBufSize = 600;  // ~256 * 2.17
-    static uint8_t buffer[inputBufSize];
+    // Buffers for audio processing
+    static const size_t inputBufSize = 512;
+    static const size_t outputBufSize = 1200;  // ~512 * 2.17
+    static uint8_t inputBuffer[inputBufSize];
     static int16_t resampleBuffer[outputBufSize];
-    size_t totalRead = 0;
+    size_t totalAudioBytes = 0;
     size_t samplesWritten = 0;
-    float resamplePos = 0.0f;  // Fractional position for resampling
 
-    // Stream audio data to speaker
-    while (client.connected() || client.available()) {
+    // Process any audio already in headerBuf (bytes 44-63)
+    if (audioInHeader > 0 && bitsPerSample == 16) {
+        int16_t* audioSamples = (int16_t*)(headerBuf + audioOffset);
+        size_t inputCount = audioInHeader / 2;
+
+        // Debug first samples from header
+        Serial.printf("[TTS] First audio bytes from header: ");
+        for (size_t i = 0; i < min((size_t)16, audioInHeader); i++) {
+            Serial.printf("%02X ", headerBuf[audioOffset + i]);
+        }
+        Serial.println();
+
+        int16_t minIn = 0, maxIn = 0;
+        for (size_t i = 0; i < inputCount; i++) {
+            if (audioSamples[i] < minIn) minIn = audioSamples[i];
+            if (audioSamples[i] > maxIn) maxIn = audioSamples[i];
+        }
+        Serial.printf("[TTS] Header audio: %d samples [%d,%d]\n", inputCount, minIn, maxIn);
+
+        // Resample and play
+        size_t outIdx = 0;
+        for (size_t i = 0; i < inputCount && outIdx < outputBufSize - 3; i++) {
+            int16_t s = audioSamples[i];
+            resampleBuffer[outIdx++] = s;
+            resampleBuffer[outIdx++] = s;
+            if ((i % 5) == 4) resampleBuffer[outIdx++] = s;
+        }
+        size_t written = audio->writeSpeaker(resampleBuffer, outIdx);
+        samplesWritten += written;
+        totalAudioBytes += audioInHeader;
+    }
+
+    // Stream remaining audio data
+    while ((client.connected() || client.available()) && millis() < timeout) {
         size_t available = client.available();
 
-        if (available) {
+        if (available > 0) {
             size_t toRead = min(available, inputBufSize);
-            size_t bytesRead = client.readBytes(buffer, toRead);
+            size_t bytesRead = client.readBytes(inputBuffer, toRead);
 
-            if (bytesRead > 0) {
-                totalRead += bytesRead;
+            if (bytesRead > 0 && bitsPerSample == 16) {
+                int16_t* audioSamples = (int16_t*)inputBuffer;
+                size_t inputCount = bytesRead / 2;
 
-                // Play through speaker via HAL
-                if (bitsPerSample == 16) {
-                    int16_t* audioSamples = (int16_t*)buffer;
-                    size_t inputCount = bytesRead / 2;
-                    size_t outputCount = 0;
-
-                    // Resample from WAV rate to speaker rate
-                    // WAV=22050Hz, Speaker=48000Hz -> upsample by ~2.17x
-                    // Use simple sample duplication (nearest neighbor)
-                    size_t outIdx = 0;
-                    for (size_t i = 0; i < inputCount && outIdx < outputBufSize - 3; i++) {
-                        int32_t sample = audioSamples[i] * 32;
-                        if (sample > 32767) sample = 32767;
-                        if (sample < -32768) sample = -32768;
-                        int16_t s = (int16_t)sample;
-
-                        // Output each sample ~2.17 times (alternate 2 and 2-2-3 pattern)
-                        resampleBuffer[outIdx++] = s;
-                        resampleBuffer[outIdx++] = s;
-                        if ((i % 6) < 1) {  // Every 6th sample, add extra copy
-                            resampleBuffer[outIdx++] = s;
-                        }
+                // Debug first few chunks
+                if (totalAudioBytes < 2000) {
+                    int16_t minIn = 0, maxIn = 0;
+                    for (size_t i = 0; i < inputCount; i++) {
+                        if (audioSamples[i] < minIn) minIn = audioSamples[i];
+                        if (audioSamples[i] > maxIn) maxIn = audioSamples[i];
                     }
-                    outputCount = outIdx;
-
-                    // Debug first chunk - show sample values
-                    if (totalRead < 600) {
-                        int16_t minSample = 0, maxSample = 0;
-                        for (size_t i = 0; i < inputCount; i++) {
-                            if (audioSamples[i] < minSample) minSample = audioSamples[i];
-                            if (audioSamples[i] > maxSample) maxSample = audioSamples[i];
-                        }
-                        Serial.printf("[TTS] Chunk: %d in, %d out, samples range [%d, %d]\n",
-                                      inputCount, outputCount, minSample, maxSample);
-                    }
-
-                    size_t written = audio->writeSpeaker(resampleBuffer, outputCount);
-                    samplesWritten += written;
+                    Serial.printf("[TTS] Chunk @%d: %d samples [%d,%d]\n",
+                                  totalAudioBytes, inputCount, minIn, maxIn);
                 }
 
-                // Check if we should stop
-                if (!speaking || paused) {
-                    break;
+                // Resample 22050Hz -> 48000Hz (~2.177x)
+                size_t outIdx = 0;
+                for (size_t i = 0; i < inputCount && outIdx < outputBufSize - 3; i++) {
+                    int16_t s = audioSamples[i];
+                    resampleBuffer[outIdx++] = s;
+                    resampleBuffer[outIdx++] = s;
+                    if ((i % 5) == 4) resampleBuffer[outIdx++] = s;
                 }
+
+                size_t written = audio->writeSpeaker(resampleBuffer, outIdx);
+                samplesWritten += written;
+                totalAudioBytes += bytesRead;
             }
+
+            // Check if we should stop
+            if (!speaking || paused) break;
+
         } else if (client.connected()) {
             delay(1);
         }
-    }
-
-    // Drain any remaining data
-    while (client.available()) {
-        client.read();
     }
 
     // Properly close the connection
     client.flush();
     client.stop();
 
-    Serial.printf("[TTS] Playback complete: %d bytes, %d samples written\n", totalRead, samplesWritten);
+    Serial.printf("[TTS] Playback complete: %d audio bytes, %d samples written\n",
+                  totalAudioBytes, samplesWritten);
 
-    return true;
+    return totalAudioBytes > 0;
 }
 
 String TTSEngine::textToPhonemes(const String& text) {

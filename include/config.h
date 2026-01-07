@@ -158,7 +158,7 @@
 #define WAKE_WORD_THRESHOLD     0.75   // 0.0 - 1.0, higher = fewer false positives
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
 #define DEBUG_WAKE_WORD         true   // Debug output for wake word detection
-#define DEBUG_WAKE_WORD_VERBOSE false  // More verbose debug output for wake word detection
+#define DEBUG_WAKE_WORD_VERBOSE true  // More verbose debug output for wake word detection
 
 // Voice command recognition
 #define VOICE_COMMANDS_ENABLED  true   // Set true when keyword spotting model ready

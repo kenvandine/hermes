@@ -17,8 +17,31 @@
 #include <Wire.h>
 #include <driver/i2s.h>
 
-// AIC3204 I2C address
+// I2C addresses
 #define AIC3204_I2C_ADDR    0x18
+#define XMOS_I2C_ADDR       0x42
+
+// XMOS Voice Kit Protocol Definitions
+// Service Resource IDs
+#define XMOS_DFU_SERVICER_RESID         240  // 0xF0
+#define XMOS_CONFIG_SERVICER_RESID      241  // 0xF1
+
+// Configuration Commands
+#define XMOS_CONFIG_READ_BIT            0x80
+#define XMOS_CONFIG_VNR_VALUE           0x00
+#define XMOS_CONFIG_CH0_PIPELINE_STAGE  0x30
+#define XMOS_CONFIG_CH1_PIPELINE_STAGE  0x40
+
+// DFU Commands
+#define XMOS_DFU_GETVERSION             0x58
+#define XMOS_DFU_READ_BIT               0x80
+
+// Pipeline Stages
+#define XMOS_PIPELINE_STAGE_NONE        0
+#define XMOS_PIPELINE_STAGE_AEC         1  // Acoustic Echo Cancellation
+#define XMOS_PIPELINE_STAGE_IC          2  // Interference Cancellation
+#define XMOS_PIPELINE_STAGE_NS          3  // Noise Suppression
+#define XMOS_PIPELINE_STAGE_AGC         4  // Automatic Gain Control
 
 // AIC3204 Register Definitions
 // Page 0 Registers
@@ -79,6 +102,133 @@ static bool aic3204SelectPage(uint8_t page) {
     return aic3204WriteReg(AIC3204_PAGE_CTRL, page);
 }
 
+// Helper functions for XMOS I2C communication
+static bool xmosWrite(const uint8_t* data, size_t len) {
+    Wire.beginTransmission(XMOS_I2C_ADDR);
+    Wire.write(data, len);
+    uint8_t error = Wire.endTransmission();
+    if (error != 0) {
+        Serial.printf("[XMOS] I2C write error %d\n", error);
+        return false;
+    }
+    return true;
+}
+
+static bool xmosRead(uint8_t* data, size_t len) {
+    size_t received = Wire.requestFrom(XMOS_I2C_ADDR, len);
+    if (received != len) {
+        Serial.printf("[XMOS] I2C read error: expected %d, got %d\n", len, received);
+        return false;
+    }
+    for (size_t i = 0; i < len; i++) {
+        data[i] = Wire.read();
+    }
+    return true;
+}
+
+static bool xmosGetVersion(uint8_t* major, uint8_t* minor, uint8_t* patch) {
+    // Request version: [SERVICE_ID, COMMAND | READ_BIT, LENGTH]
+    uint8_t cmd[] = {XMOS_DFU_SERVICER_RESID, XMOS_DFU_GETVERSION | XMOS_DFU_READ_BIT, 4};
+    if (!xmosWrite(cmd, sizeof(cmd))) {
+        return false;
+    }
+    delay(10);  // Give XMOS time to process
+
+    uint8_t resp[4];
+    if (!xmosRead(resp, 4)) {
+        return false;
+    }
+
+    // Response: [CTRL_DONE, major, minor, patch]
+    if (resp[0] != 0) {  // CTRL_DONE = 0
+        Serial.printf("[XMOS] Version request failed, status=%d\n", resp[0]);
+        return false;
+    }
+
+    *major = resp[1];
+    *minor = resp[2];
+    *patch = resp[3];
+    return true;
+}
+
+static bool xmosReadPipelineStage(uint8_t channel, uint8_t* stage) {
+    uint8_t reg = (channel == 0) ? XMOS_CONFIG_CH0_PIPELINE_STAGE : XMOS_CONFIG_CH1_PIPELINE_STAGE;
+    uint8_t cmd[] = {XMOS_CONFIG_SERVICER_RESID, (uint8_t)(reg | XMOS_CONFIG_READ_BIT), 2};
+    if (!xmosWrite(cmd, sizeof(cmd))) {
+        return false;
+    }
+    delay(10);
+
+    uint8_t resp[2];
+    if (!xmosRead(resp, 2)) {
+        return false;
+    }
+
+    if (resp[0] != 0) {  // CTRL_DONE = 0
+        Serial.printf("[XMOS] Read pipeline stage failed, status=%d\n", resp[0]);
+        return false;
+    }
+
+    *stage = resp[1];
+    return true;
+}
+
+static bool xmosWritePipelineStage(uint8_t channel, uint8_t stage) {
+    uint8_t reg = (channel == 0) ? XMOS_CONFIG_CH0_PIPELINE_STAGE : XMOS_CONFIG_CH1_PIPELINE_STAGE;
+    uint8_t cmd[] = {XMOS_CONFIG_SERVICER_RESID, reg, 1, stage};
+    return xmosWrite(cmd, sizeof(cmd));
+}
+
+static bool xmosInit() {
+    Serial.println("[XMOS] Initializing XMOS voice processor...");
+
+    // Check if XMOS is responding
+    Wire.beginTransmission(XMOS_I2C_ADDR);
+    if (Wire.endTransmission() != 0) {
+        Serial.println("[XMOS] ✗ XMOS not responding at I2C address 0x42");
+        return false;
+    }
+    Serial.println("[XMOS] ✓ XMOS responding at 0x42");
+
+    // Get firmware version
+    uint8_t major, minor, patch;
+    if (xmosGetVersion(&major, &minor, &patch)) {
+        Serial.printf("[XMOS] ✓ Firmware version: %d.%d.%d\n", major, minor, patch);
+    } else {
+        Serial.println("[XMOS] ⚠️ Could not read firmware version");
+    }
+
+    // Read current pipeline stages
+    uint8_t ch0_stage, ch1_stage;
+    if (xmosReadPipelineStage(0, &ch0_stage)) {
+        Serial.printf("[XMOS] Channel 0 pipeline stage: %d\n", ch0_stage);
+    }
+    if (xmosReadPipelineStage(1, &ch1_stage)) {
+        Serial.printf("[XMOS] Channel 1 pipeline stage: %d\n", ch1_stage);
+    }
+
+    // Configure pipeline stages (match ESPHome defaults)
+    // ESPHome uses: Channel 0 = AGC, Channel 1 = NS
+    Serial.println("[XMOS] Setting pipeline stages: CH0=AGC(4), CH1=NS(3)");
+    if (!xmosWritePipelineStage(0, XMOS_PIPELINE_STAGE_AGC)) {
+        Serial.println("[XMOS] ⚠️ Failed to set CH0 pipeline stage");
+    }
+    if (!xmosWritePipelineStage(1, XMOS_PIPELINE_STAGE_NS)) {
+        Serial.println("[XMOS] ⚠️ Failed to set CH1 pipeline stage");
+    }
+
+    // Verify settings
+    if (xmosReadPipelineStage(0, &ch0_stage)) {
+        Serial.printf("[XMOS] ✓ Channel 0 pipeline stage now: %d\n", ch0_stage);
+    }
+    if (xmosReadPipelineStage(1, &ch1_stage)) {
+        Serial.printf("[XMOS] ✓ Channel 1 pipeline stage now: %d\n", ch1_stage);
+    }
+
+    Serial.println("[XMOS] ✓ XMOS initialized");
+    return true;
+}
+
 HALAudioNabuCasa::HALAudioNabuCasa()
     : sampleRate_(DEVICE_SAMPLE_RATE)
     , volume_(DEVICE_DEFAULT_SPEAKER_VOL)
@@ -113,6 +263,11 @@ bool HALAudioNabuCasa::begin(uint32_t sampleRate) {
     Serial.println("[HAL-Audio-NabuCasa] Waiting for XMOS to boot (3 seconds)...");
     delay(3000);  // Wait for XMOS to fully boot (per ESPHome)
     Serial.println("[HAL-Audio-NabuCasa] ✓ XMOS reset complete");
+
+    // Initialize XMOS voice processor
+    if (!xmosInit()) {
+        Serial.println("[HAL-Audio-NabuCasa] ⚠️ XMOS initialization failed (continuing anyway)");
+    }
 
     // Scan I2C bus to check if XMOS and AIC3204 are responding
     Serial.println("[HAL-Audio-NabuCasa] Scanning I2C bus...");
@@ -210,13 +365,14 @@ bool HALAudioNabuCasa::beginMicrophone(uint32_t sampleRate) {
 bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
     Serial.printf("[HAL-Audio-NabuCasa] Initializing speaker (I2S_NUM_1, %dHz)...\n", sampleRate);
 
-    // I2S configuration for speaker output (ESP32 is SLAVE, XMOS/AIC3204 is master)
+    // I2S configuration for speaker output (ESP32 is SLAVE, XMOS provides clocks)
+    // Use stereo mode - XMOS/codec may expect both channels populated
     i2s_config_t i2s_spk_config = {
         .mode = (i2s_mode_t)(I2S_MODE_SLAVE | I2S_MODE_TX),  // SLAVE TX mode
         .sample_rate = sampleRate,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,  // 32-bit as per ESPHome config
-        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,  // Stereo
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,  // 32-bit to match XMOS clocks
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,  // Stereo - duplicate mono to both
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,  // Standard I2S (Philips) format
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 8,
         .dma_buf_len = 256,
@@ -266,13 +422,13 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
     aic3204WriteReg(AIC3204_NDAC, 0x82);         // Power up NDAC, divider = 2
     aic3204WriteReg(AIC3204_MDAC, 0x82);         // Power up MDAC, divider = 2
     aic3204WriteReg(AIC3204_DOSR, 0x80);         // DOSR = 128
-    aic3204WriteReg(AIC3204_CODEC_IF, 0x30);     // I2S mode, 32-bit, DOUT always driving
+    aic3204WriteReg(AIC3204_CODEC_IF, 0x30);     // I2S mode, 32-bit
     aic3204WriteReg(AIC3204_SCLK_MFP3, 0x02);    // SCLK/MFP3 as audio data in
     aic3204WriteReg(AIC3204_AUDIO_IF_4, 0x01);   // Audio interface setting 4
     aic3204WriteReg(AIC3204_AUDIO_IF_5, 0x01);   // Audio interface setting 5
     aic3204WriteReg(AIC3204_DAC_SIG_PROC, 0x01); // DAC processing block PRB_P1
 
-    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 0 configured (clock/digital)");
+    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 0 configured");
 
     // Page 1: Analog configuration
     if (!aic3204SelectPage(1)) {
@@ -283,39 +439,32 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
     aic3204WriteReg(AIC3204_LDO_CTRL, 0x09);     // Enable internal AVDD LDO
     aic3204WriteReg(AIC3204_PWR_CFG, 0x08);      // Disable weak AVDD
     aic3204WriteReg(AIC3204_LDO_CTRL, 0x01);     // Enable master analog power
-    aic3204WriteReg(AIC3204_CM_CTRL, 0x40);      // Common mode = 0.9V
+    aic3204WriteReg(AIC3204_CM_CTRL, 0x40);      // Common mode = 0.75V
     aic3204WriteReg(AIC3204_PLAY_CFG1, 0x00);    // Playback config 1
     aic3204WriteReg(AIC3204_PLAY_CFG2, 0x00);    // PowerTune PTM_P3/P4
-
-    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 1 configured (analog power)");
-
-    // Reference and output configuration
     aic3204WriteReg(AIC3204_REF_STARTUP, 0x01);  // REF charging time = 40ms
-    delay(50);  // Wait for reference to charge
+    delay(50);
 
     aic3204WriteReg(AIC3204_HP_START, 0x25);     // Headphone soft stepping
 
     // Route DAC to outputs
-    aic3204WriteReg(AIC3204_HPL_ROUTE, 0x08);    // DAC_L routed to HPL
-    aic3204WriteReg(AIC3204_HPR_ROUTE, 0x08);    // DAC_R routed to HPR
-    aic3204WriteReg(AIC3204_LOL_ROUTE, 0x08);    // DAC_L routed to LOL
-    aic3204WriteReg(AIC3204_LOR_ROUTE, 0x08);    // DAC_R routed to LOR
+    aic3204WriteReg(AIC3204_HPL_ROUTE, 0x08);    // DAC_L to HPL
+    aic3204WriteReg(AIC3204_HPR_ROUTE, 0x08);    // DAC_R to HPR
+    aic3204WriteReg(AIC3204_LOL_ROUTE, 0x08);    // DAC_L to LOL
+    aic3204WriteReg(AIC3204_LOR_ROUTE, 0x08);    // DAC_R to LOR
 
-    // Set output gains - match ESPHome values exactly
-    // HPL/HPR: 0x3e = unmuted, -2dB (ESPHome default)
-    // LOL/LOR: 0x00 = unmuted, 0dB (ESPHome default)
-    aic3204WriteReg(AIC3204_HPL_GAIN, 0x3e);     // HPL: unmuted, -2dB (ESPHome)
-    aic3204WriteReg(AIC3204_HPR_GAIN, 0x3e);     // HPR: unmuted, -2dB (ESPHome)
-    aic3204WriteReg(AIC3204_LOL_DRV_GAIN, 0x00); // LOL: unmuted, 0dB (ESPHome)
-    aic3204WriteReg(AIC3204_LOR_DRV_GAIN, 0x00); // LOR: unmuted, 0dB (ESPHome)
+    // Set output gains (ESPHome values)
+    aic3204WriteReg(AIC3204_HPL_GAIN, 0x3e);     // HPL: -2dB
+    aic3204WriteReg(AIC3204_HPR_GAIN, 0x3e);     // HPR: -2dB
+    aic3204WriteReg(AIC3204_LOL_DRV_GAIN, 0x00); // LOL: 0dB
+    aic3204WriteReg(AIC3204_LOR_DRV_GAIN, 0x00); // LOR: 0dB
 
     // Power up output drivers
     aic3204WriteReg(AIC3204_OP_PWR_CTRL, 0x3C);  // Power up HPL, HPR, LOL, LOR
 
-    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 1 configured (outputs/routing)");
+    Serial.println("[HAL-Audio-NabuCasa]   ✓ Page 1 configured");
 
-    // Wait for analog settling
-    delay(2500);
+    delay(2500);  // Wait for analog settling
 
     // Page 0: Power up DAC
     if (!aic3204SelectPage(0)) {
@@ -323,11 +472,10 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
         return false;
     }
 
-    aic3204WriteReg(AIC3204_DAC_CH_SET1, 0xD4);  // Power up left and right DAC channels
-    aic3204WriteReg(AIC3204_DAC_CH_SET2, 0x00);  // Unmute DAC channels (bit 3=L mute, bit 2=R mute)
-    // DAC digital volume: signed value, -127=silent, 0=0dB, +48=max (+24dB)
-    aic3204WriteReg(AIC3204_DACL_VOL_D, 48);     // Left DAC digital volume = +24dB (max)
-    aic3204WriteReg(AIC3204_DACR_VOL_D, 48);     // Right DAC digital volume = +24dB (max)
+    aic3204WriteReg(AIC3204_DAC_CH_SET1, 0xD4);  // Power up DAC channels
+    aic3204WriteReg(AIC3204_DAC_CH_SET2, 0x00);  // Unmute DAC
+    aic3204WriteReg(AIC3204_DACL_VOL_D, 48);     // Left volume = +24dB (max)
+    aic3204WriteReg(AIC3204_DACR_VOL_D, 48);     // Right volume = +24dB (max)
 
     Serial.println("[HAL-Audio-NabuCasa] ✓ AIC3204 codec initialized");
 
@@ -414,57 +562,88 @@ size_t HALAudioNabuCasa::readMicrophone(int16_t* buffer, size_t sampleCount) {
 }
 
 size_t HALAudioNabuCasa::writeSpeaker(const int16_t* buffer, size_t sampleCount) {
-    // Debug: Log function entry (first 5 calls)
+    // Debug counter - reset each TTS session (when sampleCount changes significantly)
     static int callCount = 0;
-    if (callCount++ < 5) {
-        Serial.printf("[HAL-Audio-NabuCasa] writeSpeaker() call #%d: speakerReady=%d, buffer=%p, sampleCount=%d\n",
-                      callCount, speakerReady_, buffer, sampleCount);
+    static size_t lastSampleCount = 0;
+
+    // Reset counter if this looks like a new TTS session
+    if (sampleCount != lastSampleCount && callCount > 100) {
+        callCount = 0;
     }
+    lastSampleCount = sampleCount;
+    callCount++;
 
     if (!speakerReady_ || !buffer || sampleCount == 0) {
         return 0;
     }
 
-    // Convert 16-bit mono to 32-bit stereo for output
-    size_t stereoSamples = sampleCount * 2;  // Stereo
-    int32_t* tempBuffer = (int32_t*)malloc(stereoSamples * sizeof(int32_t));
-    if (!tempBuffer) {
-        if (callCount <= 5) {
-            Serial.println("[HAL-Audio-NabuCasa] malloc failed for speaker tempBuffer!");
-        }
+    // Find min/max of input samples for debug
+    int16_t minSample = buffer[0], maxSample = buffer[0];
+    for (size_t i = 1; i < sampleCount; i++) {
+        if (buffer[i] < minSample) minSample = buffer[i];
+        if (buffer[i] > maxSample) maxSample = buffer[i];
+    }
+
+    // Convert 16-bit mono to 32-bit stereo (duplicate to both channels)
+    // Allocate stereo buffer: L-R-L-R interleaved
+    int32_t* i2sBuffer = (int32_t*)malloc(sampleCount * 2 * sizeof(int32_t));
+    if (!i2sBuffer) {
+        Serial.println("[HAL] malloc failed!");
         return 0;
     }
 
-    // Convert 16-bit mono to 32-bit stereo (duplicate mono to both channels)
-    // I2S 32-bit format: data in upper 16 bits (MSB-justified)
+    // Apply software volume control with very aggressive gain
+    // Piper audio is quiet (6-22% of full scale), need high gain
+    float volumeGain;
+    if (volume_ == 0) {
+        volumeGain = 0.0f;
+    } else {
+        float normalized = volume_ / 100.0f;
+        // Use 32x max gain with quadratic curve for natural feel
+        volumeGain = 32.0f * normalized * normalized;
+    }
+
+    int clippedCount = 0;
     for (size_t i = 0; i < sampleCount; i++) {
-        int32_t sample = ((int32_t)buffer[i]) << 16;  // Shift to upper 16 bits
-        tempBuffer[i * 2] = sample;      // Left channel
-        tempBuffer[i * 2 + 1] = sample;  // Right channel (same as left)
+        // Apply volume-based gain
+        int32_t amplified = (int32_t)(buffer[i] * volumeGain);
+        // Clamp to 16-bit range
+        if (amplified > 32767) { amplified = 32767; clippedCount++; }
+        if (amplified < -32768) { amplified = -32768; clippedCount++; }
+        // MSB-justify: put 16-bit sample in upper bits of 32-bit word
+        int32_t sample32 = amplified << 16;
+        // Write to both L and R channels (interleaved)
+        i2sBuffer[i * 2] = sample32;      // Left
+        i2sBuffer[i * 2 + 1] = sample32;  // Right (same as left)
     }
 
-    if (callCount <= 5) {
-        Serial.printf("[HAL-Audio-NabuCasa] About to call i2s_write, bytesToWrite=%d\n",
-                      stereoSamples * sizeof(int32_t));
+    // Debug first 10 calls per session
+    if (callCount <= 10) {
+        int16_t rawFirst = buffer[0];
+        int32_t ampFirst = (int32_t)(rawFirst * volumeGain);
+        if (ampFirst > 32767) ampFirst = 32767;
+        if (ampFirst < -32768) ampFirst = -32768;
+        Serial.printf("[HAL] #%d: vol=%d%% (%.1fx), in[%d,%d] sample: %d -> %d -> 0x%08X, clip=%d\n",
+                      callCount, volume_, volumeGain, minSample, maxSample,
+                      rawFirst, (int)ampFirst, i2sBuffer[0], clippedCount);
     }
 
+    size_t bytesToWrite = sampleCount * 2 * sizeof(int32_t);  // Stereo
     size_t bytesWritten = 0;
-    // Use 100ms timeout instead of portMAX_DELAY to avoid blocking forever
-    esp_err_t err = i2s_write(I2S_NUM_1, tempBuffer, stereoSamples * sizeof(int32_t),
-                              &bytesWritten, pdMS_TO_TICKS(100));
+    esp_err_t err = i2s_write(I2S_NUM_1, i2sBuffer, bytesToWrite, &bytesWritten, pdMS_TO_TICKS(100));
 
-    if (callCount <= 5) {
-        Serial.printf("[HAL-Audio-NabuCasa] i2s_write returned: err=%d, bytesWritten=%d\n",
-                      err, bytesWritten);
+    if (callCount <= 10) {
+        Serial.printf("[HAL] i2s_write: err=%d, wrote=%d/%d\n", err, bytesWritten, bytesToWrite);
     }
 
-    free(tempBuffer);
+    free(i2sBuffer);
 
     if (err != ESP_OK) {
         return 0;
     }
 
-    return bytesWritten / (sizeof(int32_t) * 2);  // Return number of mono samples written
+    // Return number of mono samples written (converted to stereo internally)
+    return bytesWritten / (2 * sizeof(int32_t));
 }
 
 void HALAudioNabuCasa::setVolume(uint8_t volume) {
