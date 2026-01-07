@@ -298,18 +298,85 @@ void loop() {
             // Record: Clear buffer and capture fresh audio
             WakeWord* ww = audioPipeline->getWakeWord();
             if (ww) {
-                Serial.println("\n[CMD] Clearing buffer and recording fresh audio...");
+                // Disable wake word during recording to prevent buffer sliding
+                bool wasEnabled = ww->isEnabled();
+                ww->enable(false);
+
+                Serial.println("\n[CMD] Preparing to record...");
                 ww->clearBuffer();
-                Serial.println("[CMD] Say your wake word now!");
 
-                // Wait for buffer to fill with fresh audio (1 second)
-                delay(1000);
+                // Give user time to prepare, then signal to speak
+                delay(200);
+                Serial.println("[CMD] >>> SPEAK NOW <<<");
 
-                Serial.println("[CMD] Saving to /recording.wav...");
-                if (ww->saveBufferToWAV("/recording.wav")) {
-                    Serial.println("[CMD] ✓ Recording saved! Press 'd' to download");
+                // Manually fill the buffer with fresh audio (bypass wake word processing)
+                // Record 2 seconds, save 1.5 seconds (skipping reaction time)
+                HALAudio* audio = audioPipeline->getAudio();
+                const size_t recordingSamples = 32000;  // 2 seconds at 16kHz
+                const size_t saveSamples = 24000;       // 1.5 seconds to save
+                const size_t skipSamples = 4000;        // 0.25 seconds reaction time
+                int16_t* recordingBuffer = (int16_t*)malloc(recordingSamples * sizeof(int16_t));
+
+                if (audio && recordingBuffer) {
+                    int16_t tempBuf[320];  // 20ms chunks
+                    size_t totalSamples = 0;
+
+                    // Record for 2 seconds
+                    while (totalSamples < recordingSamples) {
+                        size_t read = audio->readMicrophone(tempBuf, 320);
+                        if (read > 0) {
+                            size_t toCopy = min(read, recordingSamples - totalSamples);
+                            memcpy(recordingBuffer + totalSamples, tempBuf, toCopy * sizeof(int16_t));
+                            totalSamples += toCopy;
+                        }
+                        delay(1);  // Small delay to prevent tight loop
+                    }
+
+                    Serial.println("[CMD] Recording complete.");
+                    Serial.println("[CMD] Saving to /recording.wav...");
+
+                    // Save directly to WAV file (skip reaction time, save 1.5 seconds)
+                    File file = SPIFFS.open("/recording.wav", FILE_WRITE);
+                    if (file) {
+                        // WAV header
+                        struct {
+                            char riff[4] = {'R', 'I', 'F', 'F'};
+                            uint32_t fileSize;
+                            char wave[4] = {'W', 'A', 'V', 'E'};
+                            char fmt[4] = {'f', 'm', 't', ' '};
+                            uint32_t fmtSize = 16;
+                            uint16_t audioFormat = 1;
+                            uint16_t numChannels = 1;
+                            uint32_t sampleRate = 16000;
+                            uint32_t byteRate = 32000;
+                            uint16_t blockAlign = 2;
+                            uint16_t bitsPerSample = 16;
+                            char data[4] = {'d', 'a', 't', 'a'};
+                            uint32_t dataSize;
+                        } header;
+
+                        header.dataSize = saveSamples * 2;
+                        header.fileSize = 36 + header.dataSize;
+
+                        file.write((uint8_t*)&header, sizeof(header));
+                        file.write((uint8_t*)(recordingBuffer + skipSamples), saveSamples * 2);
+                        file.close();
+
+                        Serial.printf("[CMD] ✓ Saved %d samples (%.2fs) to /recording.wav\n",
+                                      saveSamples, saveSamples / 16000.0f);
+                        Serial.println("[CMD] Press 'd' to download");
+                    } else {
+                        Serial.println("[CMD] ✗ Failed to open file for writing");
+                    }
+
+                    free(recordingBuffer);
                 } else {
-                    Serial.println("[CMD] ✗ Failed to save recording");
+                    Serial.println("[CMD] ✗ Failed to allocate recording buffer");
+                }
+
+                // Re-enable wake word detection
+                if (wasEnabled) {
+                    ww->enable(true);
                 }
             }
         }
@@ -1219,17 +1286,26 @@ void audioTask(void* parameter) {
 
             // Check for command timeout or buffer completion
             if (commandProcessor && commandProcessor->hasTimedOut()) {
-                // On timeout, check if we have a partial AI query
-                CommandResult partial = commandProcessor->getPartialCommand();
-                if (partial.command == VoiceCommand::ASK_AI && !partial.aiQuery.isEmpty()) {
-                    Serial.printf("[AUDIO_TASK] Command timeout - processing partial AI query: '%s'\n",
-                                  partial.aiQuery.c_str());
-                    if (aiManager) {
-                        aiManager->processQuery(partial.aiQuery);
+                // On timeout, process any captured Whisper audio first
+                if (WHISPER_ENABLED && isCapturingForWhisper && whisperBufferIndex > AUDIO_SAMPLE_RATE) {
+                    // At least 1 second of audio captured - process it
+                    Serial.printf("[Whisper] Timeout - processing %d samples...\n", whisperBufferIndex);
+                    isCapturingForWhisper = false;
+                    processWhisperAudio();
+                }
+                // Fallback: check if we have a partial AI query from keyword spotting
+                else {
+                    CommandResult partial = commandProcessor->getPartialCommand();
+                    if (partial.command == VoiceCommand::ASK_AI && !partial.aiQuery.isEmpty()) {
+                        Serial.printf("[AUDIO_TASK] Command timeout - processing partial AI query: '%s'\n",
+                                      partial.aiQuery.c_str());
+                        if (aiManager) {
+                            aiManager->processQuery(partial.aiQuery);
+                        }
+                    } else {
+                        Serial.println("[AUDIO_TASK] Command timeout - returning to IDLE");
+                        stateMachine->setState(AppState::IDLE);
                     }
-                } else {
-                    Serial.println("[AUDIO_TASK] Command timeout - returning to IDLE");
-                    stateMachine->setState(AppState::IDLE);
                 }
             }
         }

@@ -110,6 +110,15 @@ public:
      */
     const int16_t* getBuffer(size_t* size) const;
 
+    /**
+     * Add samples directly to buffer without running inference
+     * Used for recording training samples
+     * @param samples Audio samples to add
+     * @param sampleCount Number of samples
+     * @return Number of samples actually added
+     */
+    size_t addSamples(const int16_t* samples, size_t sampleCount);
+
 private:
     bool initialized;
     bool enabled;
