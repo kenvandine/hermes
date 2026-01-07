@@ -90,15 +90,15 @@ private:
                          uint8_t** wavBuffer);
 
     /**
-     * Send HTTP POST request with audio data
-     * @param endpoint API endpoint path
+     * Send HTTP POST request with multipart form data
+     * @param endpoint API endpoint URL
      * @param audioData WAV audio data
      * @param audioSize Size of audio data
      * @param response Output response string
      * @return true if request succeeded
      */
-    bool httpPostAudio(const String& endpoint, const uint8_t* audioData,
-                       size_t audioSize, String& response);
+    bool httpPostMultipart(const String& endpoint, const uint8_t* audioData,
+                           size_t audioSize, String& response);
 
     /**
      * Parse JSON response from Whisper server

@@ -155,9 +155,10 @@
 
 // Wake word detection
 #define WAKE_WORD_ENABLED       true   // Edge Impulse model integrated
-#define WAKE_WORD_THRESHOLD     0.70   // 0.0 - 1.0, higher = fewer false positives
+#define WAKE_WORD_THRESHOLD     0.75   // 0.0 - 1.0, higher = fewer false positives
 #define WAKE_WORD_DEBOUNCE_MS   1000   // Minimum time between detections
-#define DEBUG_WAKE_WORD         true  // Disable to prevent Serial corruption of audio buffer
+#define DEBUG_WAKE_WORD         true   // Debug output for wake word detection
+#define DEBUG_WAKE_WORD_VERBOSE false  // More verbose debug output for wake word detection
 
 // Voice command recognition
 #define VOICE_COMMANDS_ENABLED  true   // Set true when keyword spotting model ready
@@ -259,9 +260,9 @@
 #define OLLAMA_MAX_TOKENS       200                    // Concise responses
 #define OLLAMA_TEMPERATURE      0.7                    // Creativity (0.0-2.0)
 
-// Piper TTS server settings
-#define PIPER_SERVER_URL        "http://192.168.1.20"  // Piper LXD container IP
-#define PIPER_SERVER_PORT       10200                  // Piper Wyoming protocol port
+// Piper TTS server settings (raw TCP, not HTTP)
+#define PIPER_HOST              "192.168.1.20"         // Piper server IP/hostname
+#define PIPER_PORT              10200                  // Piper Wyoming protocol port
 #define PIPER_VOICE             "en_GB-alan-medium"  // Voice model name
 
 // Whisper speech recognition server (optional)

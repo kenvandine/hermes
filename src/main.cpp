@@ -1123,6 +1123,8 @@ void setupAI() {
         return;
     }
     ttsEngine->setSpeed(TTS_SPEED);
+    ttsEngine->setPiperServer(PIPER_HOST, PIPER_PORT);
+    ttsEngine->setVoice(PIPER_VOICE);
     Serial.println("[AI] ✓ TTS engine initialized");
 
     // Initialize Home Assistant Conversation API

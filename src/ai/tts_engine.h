@@ -54,7 +54,7 @@ public:
     void setVoice(const String& voice);  // Voice name/ID
 
     // Server configuration (for Piper)
-    void setPiperServer(const String& url, uint16_t port);
+    void setPiperServer(const String& host, uint16_t port);
 
     // Update (call in loop for async operations)
     void update();
@@ -66,7 +66,7 @@ private:
     String errorMessage;
 
     // Piper TTS settings
-    String piperServerUrl;
+    String piperServerHost;
     uint16_t piperServerPort;
     String piperVoice;
     HTTPClient http;

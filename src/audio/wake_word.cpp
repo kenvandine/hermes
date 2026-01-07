@@ -189,7 +189,7 @@ bool WakeWord::process(const int16_t* samples, size_t sampleCount) {
 
         // When buffer is full, run inference
         if (rollingBufferPos >= rollingBufferSize) {
-            #if DEBUG_WAKE_WORD
+            #if DEBUG_WAKE_WORD_VERBOSE
             Serial.printf("[WakeWord] Buffer full (%d samples), running inference...\n", rollingBufferSize);
             #endif
 
@@ -303,7 +303,7 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
     }
 
     // Debug: Check audio amplitude
-    #if DEBUG_WAKE_WORD
+    #if DEBUG_WAKE_WORD_VERBOSE
     {
         int16_t minSample = 32767, maxSample = -32768;
         int64_t sumSquares = 0;
@@ -321,7 +321,7 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
     // Convert int16 samples to float for Edge Impulse
     convertSamples(samples, inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
-    #if DEBUG_WAKE_WORD
+    #if DEBUG_WAKE_WORD_VERBOSE
     // Debug: Print first few float samples to verify conversion
     Serial.printf("[WakeWord] Float samples[0-4]: %.4f, %.4f, %.4f, %.4f, %.4f\n",
                   inferenceBuffer[0], inferenceBuffer[1], inferenceBuffer[2],
@@ -347,15 +347,15 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
         return false;
     }
 
-    #if DEBUG_WAKE_WORD
+    #if DEBUG_WAKE_WORD_VERBOSE
     // Debug: Print DSP timing
     Serial.printf("[WakeWord] DSP took %d ms, classification took %d ms\n",
                   result.timing.dsp, result.timing.classification);
     #endif
 
     // Find the "Hey Hermes" class and check confidence
-    // Edge Impulse model will have labels like "Hey Hermes", "noise", "unknown"
-    #if DEBUG_WAKE_WORD
+    // Edge Impulse model will have labels like "Hermes", "noise", "unknown"
+    #if DEBUG_WAKE_WORD_VERBOSE
     Serial.printf("[WakeWord] Inference took %lums, checking %d classes:\n", inferenceTimeMs, EI_CLASSIFIER_LABEL_COUNT);
     #endif
 
@@ -363,7 +363,7 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
         const char* label = result.classification[ix].label;
         float confidence = result.classification[ix].value;
 
-        #if DEBUG_WAKE_WORD
+        #if DEBUG_WAKE_WORD_VERBOSE
         Serial.printf("[WakeWord]   %s: %.2f\n", label, confidence);
         #endif
 

@@ -125,11 +125,13 @@ bool StateMachine::isValidTransition(AppState from, AppState to) const {
 
         case AppState::AI_QUERY:
             return (to == AppState::AI_RESPONSE ||
+                    to == AppState::LISTENING ||  // Allow wake word to interrupt
                     to == AppState::IDLE ||
                     to == AppState::ERROR);
 
         case AppState::AI_RESPONSE:
-            return (to == AppState::IDLE ||
+            return (to == AppState::LISTENING ||  // Allow wake word to interrupt
+                    to == AppState::IDLE ||
                     to == AppState::ERROR);
 
         case AppState::ERROR:

@@ -1,5 +1,6 @@
 #include "tts_engine.h"
 #include "config.h"
+#include <WiFiClient.h>
 
 TTSEngine::TTSEngine()
     : currentEngine(PIPER),
@@ -34,7 +35,7 @@ bool TTSEngine::begin(Engine engine, AudioPipeline* audio) {
     switch (engine) {
         case PIPER:
             Serial.printf("[TTS] Piper server: %s:%d\n",
-                         piperServerUrl.c_str(), piperServerPort);
+                         piperServerHost.c_str(), piperServerPort);
             break;
 
         case ESPEAK:
@@ -136,10 +137,10 @@ void TTSEngine::setVoice(const String& voice) {
     piperVoice = voice;
 }
 
-void TTSEngine::setPiperServer(const String& url, uint16_t port) {
-    piperServerUrl = url;
+void TTSEngine::setPiperServer(const String& host, uint16_t port) {
+    piperServerHost = host;
     piperServerPort = port;
-    Serial.printf("[TTS] Piper server set to: %s:%d\n", url.c_str(), port);
+    Serial.printf("[TTS] Piper server set to: %s:%d\n", host.c_str(), port);
 }
 
 void TTSEngine::update() {
@@ -148,9 +149,9 @@ void TTSEngine::update() {
 }
 
 bool TTSEngine::speakPiper(const String& text) {
-    if (piperServerUrl.isEmpty()) {
-        errorMessage = "Piper server URL not set";
-        Serial.println("[TTS] ERROR: Piper server URL not configured");
+    if (piperServerHost.isEmpty()) {
+        errorMessage = "Piper server host not set";
+        Serial.println("[TTS] ERROR: Piper server host not configured");
         return false;
     }
 
@@ -186,85 +187,185 @@ bool TTSEngine::speakCloud(const String& text) {
 }
 
 bool TTSEngine::streamPiperAudio(const String& text) {
-    // Piper Wyoming protocol uses a simple JSON request format
-    String url = piperServerUrl + ":" + String(piperServerPort) + "/api/tts";
+    // Piper Wyoming protocol - raw TCP with HTTP/0.9 style response
+    // HTTPClient doesn't work because the server returns raw audio without HTTP headers
 
-    Serial.printf("[TTS] Connecting to: %s\n", url.c_str());
+    Serial.printf("[TTS] Connecting to: %s:%d\n", piperServerHost.c_str(), piperServerPort);
 
-    http.begin(url);
-    http.setTimeout(10000);
-    http.addHeader("Content-Type", "application/json");
+    WiFiClient client;
+    client.setTimeout(15);  // 15 second timeout for read operations
 
-    // Build JSON request
-    String jsonRequest = "{\"text\":\"" + text + "\",\"voice\":\"" + piperVoice + "\"}";
+    unsigned long connectStart = millis();
+    if (!client.connect(piperServerHost.c_str(), piperServerPort, 15000)) {  // 15 second connect timeout
+        Serial.printf("[TTS] Connection failed after %lu ms\n", millis() - connectStart);
+        errorMessage = "Connection failed";
+        return false;
+    }
+
+    Serial.printf("[TTS] Connected in %lu ms\n", millis() - connectStart);
 
     speaking = true;
     status = STREAMING;
 
-    int httpCode = http.POST(jsonRequest);
+    // Wyoming/Piper protocol: just send raw text, receive raw audio
+    Serial.printf("[TTS] Sending text: %s\n", text.substring(0, 50).c_str());
+    client.println(text);
+    client.flush();
 
-    if (httpCode != HTTP_CODE_OK && httpCode != 200) {
-        Serial.printf("[TTS] HTTP error: %d\n", httpCode);
-        errorMessage = "HTTP error: " + String(httpCode);
-        http.end();
+    // Wait for response
+    unsigned long timeout = millis() + 15000;
+    while (client.connected() && !client.available() && millis() < timeout) {
+        delay(10);
+    }
+
+    if (!client.available()) {
+        Serial.println("[TTS] No response from server");
+        errorMessage = "No response";
+        client.stop();
         return false;
     }
 
-    // Get the audio stream
-    WiFiClient* stream = http.getStreamPtr();
-    int contentLength = http.getSize();
+    Serial.println("[TTS] Receiving audio data...");
 
-    Serial.printf("[TTS] Receiving audio: %d bytes\n", contentLength);
-
-    // Buffer for audio chunks
-    const size_t bufferSize = 512;
-    uint8_t buffer[bufferSize];
-    int bytesRead = 0;
-    int totalRead = 0;
-
-    // Skip WAV header (44 bytes)
-    if (contentLength > 44) {
-        stream->readBytes(buffer, 44);
-        totalRead += 44;
+    // Read and parse WAV header
+    uint8_t wavHeader[44];
+    size_t headerRead = 0;
+    timeout = millis() + 5000;
+    while (headerRead < 44 && (client.connected() || client.available()) && millis() < timeout) {
+        if (client.available()) {
+            wavHeader[headerRead++] = client.read();
+        } else {
+            delay(1);
+        }
     }
 
+    // Verify WAV header
+    if (headerRead < 44 || memcmp(wavHeader, "RIFF", 4) != 0) {
+        Serial.printf("[TTS] Invalid WAV header (got %d bytes, first 4: %c%c%c%c)\n",
+                      headerRead,
+                      headerRead > 0 ? wavHeader[0] : '?',
+                      headerRead > 1 ? wavHeader[1] : '?',
+                      headerRead > 2 ? wavHeader[2] : '?',
+                      headerRead > 3 ? wavHeader[3] : '?');
+        errorMessage = "Invalid audio format";
+        client.stop();
+        return false;
+    }
+
+    // Extract WAV parameters
+    uint32_t dataSize = *((uint32_t*)(wavHeader + 40));
+    uint32_t sampleRate = *((uint32_t*)(wavHeader + 24));
+    uint16_t bitsPerSample = *((uint16_t*)(wavHeader + 34));
+
+    Serial.printf("[TTS] WAV: %dHz, %d-bit, %d bytes\n", sampleRate, bitsPerSample, dataSize);
+
+    // Check if audio pipeline is available
+    if (!audioPipeline) {
+        Serial.println("[TTS] ERROR: No audio pipeline");
+        client.stop();
+        return false;
+    }
+    if (!audioPipeline->getAudio()) {
+        Serial.println("[TTS] ERROR: No audio HAL");
+        client.stop();
+        return false;
+    }
+
+    HALAudio* audio = audioPipeline->getAudio();
+
+    // Nabu Casa speaker runs at fixed 48kHz (XMOS I2S master)
+    // getSampleRate() returns requested rate, not actual hardware rate
+    const uint32_t speakerRate = 48000;
+
+    // Calculate resampling ratio: how many input samples per output sample
+    // For 22050->48000: ratio = 22050/48000 = 0.459 (upsample, need more outputs)
+    float resampleRatio = (float)sampleRate / (float)speakerRate;
+    Serial.printf("[TTS] Resampling from %dHz to %dHz (ratio %.3f)\n",
+                  sampleRate, speakerRate, resampleRatio);
+
+    Serial.printf("[TTS] Speaker ready: %s\n", audio->isSpeakerReady() ? "yes" : "no");
+
+    // Use static buffers to avoid stack overflow in Audio Task
+    // Input buffer small, output buffer larger for upsampling (22050->48000 = 2.17x)
+    static const size_t inputBufSize = 256;
+    static const size_t outputBufSize = 600;  // ~256 * 2.17
+    static uint8_t buffer[inputBufSize];
+    static int16_t resampleBuffer[outputBufSize];
+    size_t totalRead = 0;
+    size_t samplesWritten = 0;
+    float resamplePos = 0.0f;  // Fractional position for resampling
+
     // Stream audio data to speaker
-    while (http.connected() && (totalRead < contentLength || contentLength == -1)) {
-        size_t available = stream->available();
+    while (client.connected() || client.available()) {
+        size_t available = client.available();
 
         if (available) {
-            int toRead = min(available, bufferSize);
-            bytesRead = stream->readBytes(buffer, toRead);
+            size_t toRead = min(available, inputBufSize);
+            size_t bytesRead = client.readBytes(buffer, toRead);
 
             if (bytesRead > 0) {
                 totalRead += bytesRead;
 
-                // TODO: Implement proper audio playback through speaker
-                // Need to add a method to AudioPipeline or access I2S manager directly
-                // For now, just consume the audio data
-                //
-                // Convert uint8_t to int16_t for AudioPipeline
-                // int16_t* audioSamples = (int16_t*)buffer;
-                // size_t sampleCount = bytesRead / 2;
-                //
-                // Play through speaker (blocking)
-                // if (audioPipeline) {
-                //     audioPipeline->playSpeaker(audioSamples, sampleCount);
-                // }
+                // Play through speaker via HAL
+                if (bitsPerSample == 16) {
+                    int16_t* audioSamples = (int16_t*)buffer;
+                    size_t inputCount = bytesRead / 2;
+                    size_t outputCount = 0;
+
+                    // Resample from WAV rate to speaker rate
+                    // WAV=22050Hz, Speaker=48000Hz -> upsample by ~2.17x
+                    // Use simple sample duplication (nearest neighbor)
+                    size_t outIdx = 0;
+                    for (size_t i = 0; i < inputCount && outIdx < outputBufSize - 3; i++) {
+                        int32_t sample = audioSamples[i] * 32;
+                        if (sample > 32767) sample = 32767;
+                        if (sample < -32768) sample = -32768;
+                        int16_t s = (int16_t)sample;
+
+                        // Output each sample ~2.17 times (alternate 2 and 2-2-3 pattern)
+                        resampleBuffer[outIdx++] = s;
+                        resampleBuffer[outIdx++] = s;
+                        if ((i % 6) < 1) {  // Every 6th sample, add extra copy
+                            resampleBuffer[outIdx++] = s;
+                        }
+                    }
+                    outputCount = outIdx;
+
+                    // Debug first chunk - show sample values
+                    if (totalRead < 600) {
+                        int16_t minSample = 0, maxSample = 0;
+                        for (size_t i = 0; i < inputCount; i++) {
+                            if (audioSamples[i] < minSample) minSample = audioSamples[i];
+                            if (audioSamples[i] > maxSample) maxSample = audioSamples[i];
+                        }
+                        Serial.printf("[TTS] Chunk: %d in, %d out, samples range [%d, %d]\n",
+                                      inputCount, outputCount, minSample, maxSample);
+                    }
+
+                    size_t written = audio->writeSpeaker(resampleBuffer, outputCount);
+                    samplesWritten += written;
+                }
 
                 // Check if we should stop
                 if (!speaking || paused) {
                     break;
                 }
             }
-        } else {
+        } else if (client.connected()) {
             delay(1);
         }
     }
 
-    http.end();
+    // Drain any remaining data
+    while (client.available()) {
+        client.read();
+    }
 
-    Serial.printf("[TTS] Playback complete: %d bytes\n", totalRead);
+    // Properly close the connection
+    client.flush();
+    client.stop();
+
+    Serial.printf("[TTS] Playback complete: %d bytes, %d samples written\n", totalRead, samplesWritten);
 
     return true;
 }

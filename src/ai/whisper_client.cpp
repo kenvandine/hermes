@@ -67,10 +67,10 @@ WhisperClient::Response WhisperClient::transcribe(const int16_t* audioData,
     Serial.printf("[Whisper] Created WAV data: %d bytes\n", wavSize);
 
     // Send to Whisper server
-    String endpoint = serverHost_ + ":" + String(serverPort_) + "/api/stt";
+    String endpoint = serverHost_ + ":" + String(serverPort_) + "/transcribe";
     String responseText;
 
-    if (!httpPostAudio(endpoint, wavBuffer, wavSize, responseText)) {
+    if (!httpPostMultipart(endpoint, wavBuffer, wavSize, responseText)) {
         result.error = "HTTP request failed";
         Serial.println("[Whisper] HTTP request failed");
         free(wavBuffer);
@@ -154,7 +154,8 @@ size_t WhisperClient::createWavData(const int16_t* audioData, size_t sampleCount
     memcpy(p, &subchunk1Size, 4); p += 4;
     uint16_t audioFormat = 1;  // PCM
     memcpy(p, &audioFormat, 2); p += 2;
-    memcpy(p, &channels, 2); p += 2;
+    uint16_t numChannels = channels;  // Convert uint8_t to uint16_t for proper 2-byte copy
+    memcpy(p, &numChannels, 2); p += 2;
     memcpy(p, &sampleRate, 4); p += 4;
     uint32_t byteRate = sampleRate * channels * sizeof(int16_t);
     memcpy(p, &byteRate, 4); p += 4;
@@ -174,18 +175,41 @@ size_t WhisperClient::createWavData(const int16_t* audioData, size_t sampleCount
     return wavSize;
 }
 
-bool WhisperClient::httpPostAudio(const String& endpoint, const uint8_t* audioData,
-                                   size_t audioSize, String& response) {
-    http_.begin(endpoint);
-    http_.addHeader("Content-Type", "audio/wav");
-    http_.setTimeout(timeoutMs_);
+bool WhisperClient::httpPostMultipart(const String& endpoint, const uint8_t* audioData,
+                                       size_t audioSize, String& response) {
+    // Create multipart form data
+    String boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 
-    // Add language header if specified
-    if (!language_.isEmpty() && language_ != "auto") {
-        http_.addHeader("Accept-Language", language_);
+    // Build multipart body
+    String bodyStart = "--" + boundary + "\r\n";
+    bodyStart += "Content-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n";
+    bodyStart += "Content-Type: audio/wav\r\n\r\n";
+
+    String bodyEnd = "\r\n--" + boundary + "--\r\n";
+
+    size_t totalSize = bodyStart.length() + audioSize + bodyEnd.length();
+
+    // Allocate buffer for complete body
+    uint8_t* body = (uint8_t*)malloc(totalSize);
+    if (!body) {
+        Serial.println("[Whisper] Failed to allocate multipart body");
+        return false;
     }
 
-    int httpCode = http_.POST((uint8_t*)audioData, audioSize);
+    // Assemble body
+    size_t offset = 0;
+    memcpy(body + offset, bodyStart.c_str(), bodyStart.length());
+    offset += bodyStart.length();
+    memcpy(body + offset, audioData, audioSize);
+    offset += audioSize;
+    memcpy(body + offset, bodyEnd.c_str(), bodyEnd.length());
+
+    http_.begin(endpoint);
+    http_.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+    http_.setTimeout(timeoutMs_);
+
+    int httpCode = http_.POST(body, totalSize);
+    free(body);
 
     if (httpCode == 200) {
         response = http_.getString();
@@ -203,7 +227,7 @@ bool WhisperClient::httpPostAudio(const String& endpoint, const uint8_t* audioDa
 }
 
 void WhisperClient::parseResponse(const String& json, Response& result) {
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(4096);  // Increased from 1024 for larger responses
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {

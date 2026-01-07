@@ -301,11 +301,13 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
     aic3204WriteReg(AIC3204_LOL_ROUTE, 0x08);    // DAC_L routed to LOL
     aic3204WriteReg(AIC3204_LOR_ROUTE, 0x08);    // DAC_R routed to LOR
 
-    // Set output gains - bit 7 is mute (0=unmuted), bits 6-0 are gain
-    aic3204WriteReg(AIC3204_HPL_GAIN, 0x00);     // HPL: Unmute, 0dB gain
-    aic3204WriteReg(AIC3204_HPR_GAIN, 0x00);     // HPR: Unmute, 0dB gain
-    aic3204WriteReg(AIC3204_LOL_DRV_GAIN, 0x00); // LOL: Unmute, 0dB gain
-    aic3204WriteReg(AIC3204_LOR_DRV_GAIN, 0x00); // LOR: Unmute, 0dB gain
+    // Set output gains - match ESPHome values exactly
+    // HPL/HPR: 0x3e = unmuted, -2dB (ESPHome default)
+    // LOL/LOR: 0x00 = unmuted, 0dB (ESPHome default)
+    aic3204WriteReg(AIC3204_HPL_GAIN, 0x3e);     // HPL: unmuted, -2dB (ESPHome)
+    aic3204WriteReg(AIC3204_HPR_GAIN, 0x3e);     // HPR: unmuted, -2dB (ESPHome)
+    aic3204WriteReg(AIC3204_LOL_DRV_GAIN, 0x00); // LOL: unmuted, 0dB (ESPHome)
+    aic3204WriteReg(AIC3204_LOR_DRV_GAIN, 0x00); // LOR: unmuted, 0dB (ESPHome)
 
     // Power up output drivers
     aic3204WriteReg(AIC3204_OP_PWR_CTRL, 0x3C);  // Power up HPL, HPR, LOL, LOR
@@ -323,8 +325,9 @@ bool HALAudioNabuCasa::beginSpeaker(uint32_t sampleRate) {
 
     aic3204WriteReg(AIC3204_DAC_CH_SET1, 0xD4);  // Power up left and right DAC channels
     aic3204WriteReg(AIC3204_DAC_CH_SET2, 0x00);  // Unmute DAC channels (bit 3=L mute, bit 2=R mute)
-    aic3204WriteReg(AIC3204_DACL_VOL_D, 0x00);   // Left DAC digital volume = 0dB
-    aic3204WriteReg(AIC3204_DACR_VOL_D, 0x00);   // Right DAC digital volume = 0dB
+    // DAC digital volume: signed value, -127=silent, 0=0dB, +48=max (+24dB)
+    aic3204WriteReg(AIC3204_DACL_VOL_D, 48);     // Left DAC digital volume = +24dB (max)
+    aic3204WriteReg(AIC3204_DACR_VOL_D, 48);     // Right DAC digital volume = +24dB (max)
 
     Serial.println("[HAL-Audio-NabuCasa] ✓ AIC3204 codec initialized");
 
@@ -433,8 +436,9 @@ size_t HALAudioNabuCasa::writeSpeaker(const int16_t* buffer, size_t sampleCount)
     }
 
     // Convert 16-bit mono to 32-bit stereo (duplicate mono to both channels)
+    // I2S 32-bit format: data in upper 16 bits (MSB-justified)
     for (size_t i = 0; i < sampleCount; i++) {
-        int32_t sample = ((int32_t)buffer[i]) << 16;  // Convert 16-bit to 32-bit
+        int32_t sample = ((int32_t)buffer[i]) << 16;  // Shift to upper 16 bits
         tempBuffer[i * 2] = sample;      // Left channel
         tempBuffer[i * 2 + 1] = sample;  // Right channel (same as left)
     }
