@@ -102,9 +102,14 @@ bool WakeWord::begin(uint32_t rate, float thresh) {
                       rate, EI_CLASSIFIER_FREQUENCY);
     }
 
-    // Allocate inference buffer for DSP input in PSRAM
+    // Allocate inference buffer for DSP input in internal RAM (PSRAM can cause issues with EI DSP)
     inferenceBufferSize = EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE;
-    inferenceBuffer = (float*)heap_caps_malloc(inferenceBufferSize * sizeof(float), MALLOC_CAP_SPIRAM);
+    inferenceBuffer = (float*)heap_caps_malloc(inferenceBufferSize * sizeof(float), MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    if (!inferenceBuffer) {
+        // Fallback to PSRAM if internal RAM is insufficient
+        Serial.println("[WakeWord] Internal RAM insufficient, trying PSRAM...");
+        inferenceBuffer = (float*)heap_caps_malloc(inferenceBufferSize * sizeof(float), MALLOC_CAP_SPIRAM);
+    }
 
     if (!inferenceBuffer) {
         Serial.println("[WakeWord] ERROR: Failed to allocate inference buffer in PSRAM");
@@ -272,6 +277,18 @@ bool WakeWord::isEnabled() const {
     return enabled && initialized;
 }
 
+// Static pointer for the callback to access
+static float* s_inferenceBuffer = nullptr;
+
+// Callback for Edge Impulse to get audio data
+static int get_audio_signal_data(size_t offset, size_t length, float *out_ptr) {
+    if (!s_inferenceBuffer) {
+        return -1;
+    }
+    memcpy(out_ptr, s_inferenceBuffer + offset, length * sizeof(float));
+    return 0;
+}
+
 bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
 #if !WAKE_WORD_ENABLED
     return false;
@@ -287,8 +304,7 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
 
     // Debug: Check audio amplitude
     #if DEBUG_WAKE_WORD
-    static int debugCount = 0;
-    if (debugCount++ < 3) {  // Only first 3 inferences
+    {
         int16_t minSample = 32767, maxSample = -32768;
         int64_t sumSquares = 0;
         for (size_t i = 0; i < sampleCount; i++) {
@@ -297,25 +313,28 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
             sumSquares += (int64_t)samples[i] * samples[i];
         }
         float rms = sqrt((float)sumSquares / sampleCount);
-        Serial.printf("[WakeWord] Audio stats: min=%d, max=%d, RMS=%.1f\n",
+        Serial.printf("[WakeWord] Audio: min=%d, max=%d, RMS=%.1f\n",
                       minSample, maxSample, rms);
     }
     #endif
 
-    // Convert samples to float (-1.0 to 1.0 range)
+    // Convert int16 samples to float for Edge Impulse
     convertSamples(samples, inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+
+    #if DEBUG_WAKE_WORD
+    // Debug: Print first few float samples to verify conversion
+    Serial.printf("[WakeWord] Float samples[0-4]: %.4f, %.4f, %.4f, %.4f, %.4f\n",
+                  inferenceBuffer[0], inferenceBuffer[1], inferenceBuffer[2],
+                  inferenceBuffer[3], inferenceBuffer[4]);
+    #endif
+
+    // Set up static pointer for callback
+    s_inferenceBuffer = inferenceBuffer;
 
     // Prepare signal structure for Edge Impulse
     signal_t signal;
     signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-    signal.get_data = [](size_t offset, size_t length, float *out_ptr) -> int {
-        // This is called by Edge Impulse to get chunks of data
-        // We already have all data in inferenceBuffer, so just copy it
-        return EIDSP_OK;
-    };
-
-    // Use numpy to create signal from our buffer
-    numpy::signal_from_buffer(inferenceBuffer, EI_CLASSIFIER_RAW_SAMPLE_COUNT, &signal);
+    signal.get_data = &get_audio_signal_data;
 
     // Run classifier
     ei_impulse_result_t result = { 0 };
@@ -327,6 +346,12 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
         Serial.printf("[WakeWord] ERROR: Inference failed (%d)\n", res);
         return false;
     }
+
+    #if DEBUG_WAKE_WORD
+    // Debug: Print DSP timing
+    Serial.printf("[WakeWord] DSP took %d ms, classification took %d ms\n",
+                  result.timing.dsp, result.timing.classification);
+    #endif
 
     // Find the "Hey Hermes" class and check confidence
     // Edge Impulse model will have labels like "Hey Hermes", "noise", "unknown"
@@ -360,8 +385,10 @@ bool WakeWord::runInference(const int16_t* samples, size_t sampleCount) {
 
 void WakeWord::convertSamples(const int16_t* input, float* output, size_t count) {
     for (size_t i = 0; i < count; i++) {
-        // Convert int16_t (-32768 to 32767) to float (-1.0 to 1.0)
-        output[i] = (float)input[i] / 32768.0f;
+        // Convert int16_t to float WITHOUT normalization
+        // Edge Impulse MFE DSP expects raw int16 values cast to float (e.g., 1000 -> 1000.0f)
+        // NOT normalized values (-1.0 to 1.0) - see numpy::int16_to_float()
+        output[i] = static_cast<float>(input[i]);
     }
 }
 
@@ -419,4 +446,18 @@ const int16_t* WakeWord::getBuffer(size_t* size) const {
         *size = rollingBufferPos;
     }
     return rollingBuffer;
+}
+
+size_t WakeWord::addSamples(const int16_t* samples, size_t sampleCount) {
+    if (!initialized || !samples || !rollingBuffer) {
+        return 0;
+    }
+
+    size_t added = 0;
+    for (size_t i = 0; i < sampleCount && rollingBufferPos < rollingBufferSize; i++) {
+        rollingBuffer[rollingBufferPos++] = samples[i];
+        added++;
+    }
+
+    return added;
 }
