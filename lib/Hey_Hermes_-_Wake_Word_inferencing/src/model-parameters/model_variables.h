@@ -149,7 +149,7 @@ const ei_impulse_t impulse_866715_8 = {
     .project_name = "Hey Hermes - Wake Word",
     .impulse_id = 8,
     .impulse_name = "Impulse #8",
-    .deploy_version = 10,
+    .deploy_version = 11,
 
     .nn_input_frame_size = 1274,
     .raw_sample_count = 16000,
