@@ -187,6 +187,23 @@ size_t I2SManager::readMicrophone(int16_t* buffer, size_t sampleCount) {
         return 0;
     }
 
+    // Debug: Check if we're getting actual data from I2S
+    static int debugCount = 0;
+    static unsigned long lastDebug = 0;
+    unsigned long now = millis();
+    if (now - lastDebug >= 2000) {  // Every 2 seconds
+        int16_t minVal = buffer[0], maxVal = buffer[0];
+        int nonZero = 0;
+        for (size_t i = 0; i < sampleCount; i++) {
+            if (buffer[i] < minVal) minVal = buffer[i];
+            if (buffer[i] > maxVal) maxVal = buffer[i];
+            if (buffer[i] != 0) nonZero++;
+        }
+        Serial.printf("[I2S] Read #%d: %d bytes, samples[%d,%d], nonzero=%d/%d\n",
+                      ++debugCount, bytesRead, minVal, maxVal, nonZero, sampleCount);
+        lastDebug = now;
+    }
+
     return bytesRead / sizeof(int16_t);
 }
 

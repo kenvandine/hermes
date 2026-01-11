@@ -1,6 +1,13 @@
 #include "audio_pipeline.h"
 #include "config.h"
 
+// Include device-specific config for device capabilities
+#if defined(DEVICE_WAVESHARE)
+    #include "devices/waveshare/device_config.h"
+#elif defined(DEVICE_NABU_CASA)
+    #include "devices/nabu_casa/device_config.h"
+#endif
+
 AudioPipeline::AudioPipeline(HALAudio* audioHal)
     : audio(audioHal),
       codec(nullptr),
@@ -310,43 +317,18 @@ void AudioPipeline::getStats(uint32_t& txPackets, uint32_t& rxPackets, uint32_t&
 
 void AudioPipeline::processIdle() {
     static bool debugPrinted = false;
+    static unsigned long lastMicDebug = 0;
+    static size_t totalSamplesRead = 0;
+
     if (!debugPrinted) {
         Serial.printf("[AudioPipeline] processIdle() - wakeWordEnabled=%d, wakeWord=%p, isEnabled=%d\n",
                       wakeWordEnabled, wakeWord, wakeWord ? wakeWord->isEnabled() : 0);
         debugPrinted = true;
     }
 
-    // Feed silence to speaker to keep XMOS audio pipeline active
-    // (Some audio processors require bidirectional I2S to enable microphone)
-    memset(speakerFrame, 0, frameSize * sizeof(int16_t));
-    audio->writeSpeaker(speakerFrame, frameSize);
-
-    // In idle mode, run wake word detection if enabled
-    if (wakeWordEnabled && wakeWord && wakeWord->isEnabled()) {
-        // Read from microphone
-        size_t samplesRead = audio->readMicrophone(micFrame, frameSize);
-        if (samplesRead > 0) {
-            // Process audio through wake word detector
-            wakeWord->process(micFrame, samplesRead);
-
-            // Check if wake word was detected
-            if (wakeWord->isDetected()) {
-                Serial.printf("[AudioPipeline] Wake word detected! (confidence: %.2f)\n",
-                              wakeWord->getLastConfidence());
-
-                // Trigger callback if registered
-                if (wakeWordCallback) {
-                    wakeWordCallback();
-                }
-
-                // Reset detection state for next trigger
-                wakeWord->reset();
-            }
-        }
-    } else {
-        // No wake word detection, just wait
-        delay(10);
-    }
+    // Wake word mic reading is now done in main loop() to avoid audioTask I2S issues
+    // processIdle() just waits - the actual wake word processing happens elsewhere
+    delay(10);
 }
 
 void AudioPipeline::processLoopback() {

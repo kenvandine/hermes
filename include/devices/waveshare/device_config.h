@@ -32,6 +32,7 @@
 #define DEVICE_AUDIO_CHANNELS   1       // Mono
 #define DEVICE_HAS_ECHO_CANCEL  false   // No hardware echo cancellation
 #define DEVICE_MIC_COUNT        1       // Single microphone
+#define DEVICE_NEEDS_BIDIRECTIONAL_I2S false  // ES8311 doesn't need silence fed to speaker
 
 // Display configuration
 #define DEVICE_DISPLAY_TYPE     "AMOLED"

@@ -182,6 +182,20 @@ bool WakeWord::process(const int16_t* samples, size_t sampleCount) {
     }
 
 #if WAKE_WORD_ENABLED
+    // Debug: track buffer fill progress
+    static unsigned long lastProgressLog = 0;
+    static size_t lastLoggedPos = 0;
+    unsigned long now = millis();
+
+    // Log progress every 500ms or when buffer fills significantly
+    if (now - lastProgressLog >= 500 || (rollingBufferPos > lastLoggedPos + 4000)) {
+        Serial.printf("[WakeWord] Buffer: %d/%d samples (%.0f%%)\n",
+                      rollingBufferPos, rollingBufferSize,
+                      100.0f * rollingBufferPos / rollingBufferSize);
+        lastProgressLog = now;
+        lastLoggedPos = rollingBufferPos;
+    }
+
     // Accumulate samples into rolling buffer
     for (size_t i = 0; i < sampleCount; i++) {
         rollingBuffer[rollingBufferPos] = samples[i];

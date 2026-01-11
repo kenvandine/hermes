@@ -380,6 +380,33 @@ void loop() {
                 }
             }
         }
+        else if (cmd == 'm') {
+            // Mic Test: Read mic directly in main loop WITHOUT disabling wake word
+            // This tests if audioTask's processIdle() is interfering with I2S
+            Serial.println("\n[MIC TEST] Reading mic in main loop (wake word still running)...");
+            HALAudio* audio = audioPipeline ? audioPipeline->getAudio() : nullptr;
+            if (audio) {
+                int16_t testBuf[320];
+                for (int i = 0; i < 10; i++) {
+                    size_t read = audio->readMicrophone(testBuf, 320);
+                    if (read > 0) {
+                        int16_t minVal = testBuf[0], maxVal = testBuf[0];
+                        int nonZero = 0;
+                        for (size_t j = 0; j < read; j++) {
+                            if (testBuf[j] < minVal) minVal = testBuf[j];
+                            if (testBuf[j] > maxVal) maxVal = testBuf[j];
+                            if (testBuf[j] != 0) nonZero++;
+                        }
+                        Serial.printf("[MIC TEST] Read %d: %d samples, range[%d,%d], nonzero=%d\n",
+                                      i + 1, read, minVal, maxVal, nonZero);
+                    }
+                    delay(20);
+                }
+                Serial.println("[MIC TEST] Done. If all zeros, issue is NOT task-specific.");
+            } else {
+                Serial.println("[MIC TEST] No audio HAL available");
+            }
+        }
         else if (cmd == 'd') {
             // Download: Send WAV file over serial
             // Pause wake word detection to prevent debug output from corrupting binary data
@@ -481,7 +508,56 @@ void loop() {
         }
     }
 
-    delay(100);  // Small delay to prevent watchdog timeout
+#ifndef DISABLE_AUDIO_TEMP
+    // Wake word processing in main loop (I2S reads don't work in audioTask)
+    if (audioPipeline) {
+        WakeWord* ww = audioPipeline->getWakeWord();
+        HALAudio* audio = audioPipeline->getAudio();
+
+        if (ww && ww->isEnabled() && audio) {
+            static unsigned long lastMicDebug = 0;
+            static size_t totalSamplesRead = 0;
+
+            int16_t micBuf[320];
+            size_t samplesRead = audio->readMicrophone(micBuf, 320);
+
+            if (samplesRead > 0) {
+                totalSamplesRead += samplesRead;
+
+                // Debug: log mic throughput every second
+                unsigned long now = millis();
+                if (now - lastMicDebug >= 1000) {
+                    int16_t minVal = micBuf[0], maxVal = micBuf[0];
+                    for (size_t i = 1; i < samplesRead; i++) {
+                        if (micBuf[i] < minVal) minVal = micBuf[i];
+                        if (micBuf[i] > maxVal) maxVal = micBuf[i];
+                    }
+                    Serial.printf("[MAIN LOOP] Mic: %d samples/sec, range[%d,%d]\n",
+                                  totalSamplesRead, minVal, maxVal);
+                    totalSamplesRead = 0;
+                    lastMicDebug = now;
+                }
+
+                // Process wake word
+                ww->process(micBuf, samplesRead);
+
+                // Check for detection
+                if (ww->isDetected()) {
+                    Serial.printf("[MAIN LOOP] Wake word detected! (confidence: %.2f)\n",
+                                  ww->getLastConfidence());
+                    if (stateMachine) {
+                        stateMachine->setState(AppState::LISTENING);
+                    }
+                    ww->reset();
+                }
+            }
+
+            delay(1);  // Small delay like 'r' command
+        }
+    }
+#endif
+
+    delay(10);  // Small delay to prevent watchdog timeout
 }
 
 // ============================================================================
@@ -1242,6 +1318,31 @@ void audioTask(void* parameter) {
 
     unsigned long lastStatsTime = 0;
     int16_t* audioFrame = (int16_t*)malloc(320 * sizeof(int16_t));  // 20ms @ 16kHz
+
+    // DEBUG: Test mic directly in audioTask context (before main loop)
+    {
+        Serial.println("[AUDIO_TASK] Testing mic directly in audioTask...");
+        HALAudio* audio = audioPipeline->getAudio();
+        int16_t testBuf[320];
+        delay(100);  // Small delay before reading
+
+        for (int test = 0; test < 5; test++) {
+            size_t read = audio->readMicrophone(testBuf, 320);
+            if (read > 0) {
+                int16_t minVal = testBuf[0], maxVal = testBuf[0];
+                int nonZero = 0;
+                for (size_t i = 0; i < read; i++) {
+                    if (testBuf[i] < minVal) minVal = testBuf[i];
+                    if (testBuf[i] > maxVal) maxVal = testBuf[i];
+                    if (testBuf[i] != 0) nonZero++;
+                }
+                Serial.printf("[AUDIO_TASK] Mic test %d: %d samples, range[%d,%d], nonzero=%d\n",
+                              test + 1, read, minVal, maxVal, nonZero);
+            }
+            delay(20);
+        }
+        Serial.println("[AUDIO_TASK] Mic test complete");
+    }
 
     while (true) {
         // Process audio pipeline (handles all audio I/O, encoding, decoding)

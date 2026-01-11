@@ -35,6 +35,7 @@
 #define DEVICE_HAS_ECHO_CANCEL  true    // XMOS handles AEC
 #define DEVICE_HAS_NOISE_SUPPRESS true  // XMOS handles noise suppression
 #define DEVICE_MIC_COUNT        2       // Dual microphones
+#define DEVICE_NEEDS_BIDIRECTIONAL_I2S true  // XMOS requires bidirectional I2S to enable mic
 
 // LED Ring configuration
 #define DEVICE_LED_COUNT        12      // 12 RGB LEDs
